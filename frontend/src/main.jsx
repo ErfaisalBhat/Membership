@@ -7,12 +7,8 @@ import { loadConfig } from "./api/useConfig";
 import App from "./App";
 import "./index.css";
 
-// Use the organization's name as the browser tab title.
-loadConfig()
-  .then((c) => {
-    document.title = `${c.orgCode} Membership`;
-  })
-  .catch(() => {});
+// Load the site settings early. The tab title stays "Membership" (index.html).
+loadConfig().catch(() => {});
 
 createRoot(document.getElementById("root")).render(
   <StrictMode>
