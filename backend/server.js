@@ -17,6 +17,7 @@ const accountRoutes = require("./account/account.routes");
 const adminRoutes = require("./admin/admin.routes");
 const webhookRoutes = require("./payments/webhook.routes");
 const { paymentsProblem } = require("./payments/provider");
+const { digilockerProblem } = require("./digilocker/provider");
 const { EMAIL_LOG_ONLY } = require("./mail/mailer");
 const { startExpiryJob } = require("./expiry/expiry.job");
 
@@ -32,8 +33,8 @@ app.use(
         // When you add the Zoho checkout widget, allow its script and frames here, e.g.
         // "script-src": ["'self'", "https://static.zohocdn.com"],
         // and add the Zoho domains to "frame-src" and "connect-src".
-        // Re-enable once the site is served over HTTPS.
-        "upgrade-insecure-requests": null,
+        // On when the site is served over HTTPS (FRONTEND_URL starts with https://), off locally.
+        "upgrade-insecure-requests": FRONTEND_URL.startsWith("https://") ? [] : null,
       },
     },
   })
@@ -95,6 +96,8 @@ connectDB()
     app.listen(PORT, HOST, () => {
       console.log(`Membership API running on http://localhost:${PORT}`);
       console.log(`Online payments: ${paymentsProblem() || `on (${process.env.PAYMENT_PROVIDER})`}`);
+      console.log(`DigiLocker: ${digilockerProblem() || `on (${process.env.DIGILOCKER_PROVIDER}, ${process.env.CASHFREE_VERIFY_ENV || "sandbox"})`}`);
+      console.log(`Website address: ${FRONTEND_URL}`);
       if (EMAIL_LOG_ONLY) console.log("Emails: log mode — emails are printed here, not sent.");
     });
     startExpiryJob();
