@@ -159,9 +159,9 @@ router.post("/", memberUpload, async (req, res) => {
     throw err;
   }
 
-  // A pending online application from the same person is no longer needed.
+  // An open online application from the same person is no longer needed.
   await Application.updateMany(
-    { email: member.email, status: "PENDING" },
+    { email: member.email, status: { $in: Application.OPEN_STATUSES } },
     { $set: { status: "CANCELLED", cancelReason: "Registered by the admin." } }
   );
 

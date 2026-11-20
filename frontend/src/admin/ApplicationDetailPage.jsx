@@ -67,6 +67,94 @@ function RecordPayment({ application, config, onDone }) {
   );
 }
 
+// emailNote: what to tell the admin about the email that went to the applicant.
+const emailNote = (email) =>
+  !email?.sent ? " The email to the applicant could not be sent." : email.simulated ? " (Email is in log mode, so nothing was actually sent.)" : " The applicant has been emailed.";
+
+function Approve({ application, onDone }) {
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function approve() {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api(`/admin/applications/${application._id}/approve`, { method: "POST" });
+      onDone(res.application, `Application approved.${emailNote(res.email)}`);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-slate-600">
+        Check the details and documents. When you approve, the applicant is emailed a link to pay {formatMoney(application.amount)}. They become a member
+        and get their ID card once the payment is confirmed.
+      </p>
+      {error && <Alert>{error}</Alert>}
+      {confirming ? (
+        <div className="flex gap-2">
+          <button type="button" className={buttonClass.primary} disabled={busy} onClick={approve}>
+            {busy ? "Approving…" : "Yes, approve"}
+          </button>
+          <button type="button" className={buttonClass.secondary} onClick={() => setConfirming(false)}>
+            Back
+          </button>
+        </div>
+      ) : (
+        <button type="button" className={`${buttonClass.primary} w-full`} onClick={() => setConfirming(true)}>
+          Approve application
+        </button>
+      )}
+    </div>
+  );
+}
+
+function Reject({ application, onDone }) {
+  const [reason, setReason] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function reject() {
+    setBusy(true);
+    setError("");
+    try {
+      const res = await api(`/admin/applications/${application._id}/reject`, { method: "POST", json: { reason } });
+      onDone(res.application, `Application rejected.${emailNote(res.email)}`);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-3">
+      {error && <Alert>{error}</Alert>}
+      <Field label="Reason" htmlFor="r-reason" required hint="Sent to the applicant. For example: the ID proof is not readable.">
+        <textarea id="r-reason" rows={3} maxLength={500} className={inputClass()} value={reason} onChange={(e) => setReason(e.target.value)} />
+      </Field>
+      {confirming ? (
+        <div className="flex gap-2">
+          <button type="button" className={buttonClass.danger} disabled={busy} onClick={reject}>
+            {busy ? "Rejecting…" : "Yes, reject and delete documents"}
+          </button>
+          <button type="button" className={buttonClass.secondary} onClick={() => setConfirming(false)}>
+            Back
+          </button>
+        </div>
+      ) : (
+        <button type="button" className={`${buttonClass.secondary} w-full`} disabled={!reason.trim()} onClick={() => setConfirming(true)}>
+          Reject application
+        </button>
+      )}
+    </div>
+  );
+}
+
 function CancelApplication({ application, onDone }) {
   const [reason, setReason] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -88,7 +176,8 @@ function CancelApplication({ application, onDone }) {
   return (
     <div className="space-y-3">
       {error && <Alert>{error}</Alert>}
-      <Field label="Reason" htmlFor="c-reason" hint="For example: duplicate, refused by the Governing Body.">
+      <p className="text-sm text-slate-600">For duplicates or test entries. No email is sent. To refuse an applicant, use Reject instead.</p>
+      <Field label="Reason" htmlFor="c-reason" hint="For your records only. For example: duplicate.">
         <textarea id="c-reason" rows={2} maxLength={300} className={inputClass()} value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
       {confirming ? (
@@ -115,6 +204,14 @@ export default function ApplicationDetailPage() {
   const { config } = useConfig();
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
+  const [flash, setFlash] = useState("");
+
+  // After approve / reject / cancel: show the new status (documents are gone if it was closed).
+  function updated(app, message = "") {
+    setData((d) => ({ ...d, application: { ...d.application, ...app, ...(app.status === "APPROVED" ? {} : { documents: {} }) } }));
+    setFlash(message);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
 
   useEffect(() => {
     api(`/admin/applications/${id}`)
@@ -145,15 +242,38 @@ export default function ApplicationDetailPage() {
         ← Applications
       </Link>
       {error && <Alert onClose={() => setError("")}>{error}</Alert>}
+      {flash && (
+        <Alert kind="success" onClose={() => setFlash("")}>
+          {flash}
+        </Alert>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">{a.name}</h1>
         <StatusBadge status={a.status} large />
+        {a.aadhaar?.verified ? (
+          <StatusBadge status="ACTIVE" large label="Aadhaar verified (DigiLocker)" />
+        ) : (
+          <StatusBadge status="INACTIVE" large label="Filled manually" />
+        )}
       </div>
       <p className="-mt-4 text-sm text-slate-600">
         {a.typeLabel} · {formatMoney(a.amount)} · applied {formatDate(a.createdAt)}
         {a.status === "CANCELLED" && a.cancelReason && ` · ${a.cancelReason}`}
+        {a.reviewedAt && ` · reviewed ${formatDate(a.reviewedAt)}`}
       </p>
+
+      {a.status === "APPROVED" && (
+        <Alert kind="info">
+          Approved. The applicant has been asked to pay; they become a member as soon as the payment is confirmed. Approved applications that are not paid
+          within {config.pendingApplicationDays} days are cancelled automatically.
+        </Alert>
+      )}
+      {a.status === "REJECTED" && (
+        <Alert kind="warning" title="Rejected">
+          {a.reviewNote}
+        </Alert>
+      )}
 
       {a.status === "PAID" && a.memberId && (
         <Alert kind="success">
@@ -169,6 +289,12 @@ export default function ApplicationDetailPage() {
           <Card title="Applicant">
             <Details
               rows={[
+                [
+                  "Aadhaar (DigiLocker)",
+                  a.aadhaar?.verified
+                    ? `Verified on ${formatDate(a.aadhaar.verifiedAt)} · Aadhaar ending ${a.aadhaar.last4 || "····"} · name, date of birth, gender and father's name taken from Aadhaar`
+                    : "Not verified: details were entered manually. Check them against the uploaded ID card.",
+                ],
                 ["Email (verified)", a.email],
                 ["WhatsApp", a.whatsapp],
                 ...(isInstitution
@@ -188,8 +314,8 @@ export default function ApplicationDetailPage() {
           </Card>
 
           <Card title="Documents" padded={false}>
-            {a.status === "CANCELLED" ? (
-              <p className="px-5 py-4 text-sm text-slate-500">Documents of cancelled applications are deleted.</p>
+            {a.status === "CANCELLED" || a.status === "REJECTED" ? (
+              <p className="px-5 py-4 text-sm text-slate-500">Documents of cancelled and rejected applications are deleted.</p>
             ) : (
               <ul className="divide-y divide-slate-100">
                 {Object.keys(DOC_LABELS).map((key) => {
@@ -235,8 +361,16 @@ export default function ApplicationDetailPage() {
           </Card>
         </div>
 
-        {a.status === "PENDING" && (
+        {(a.status === "PENDING" || a.status === "APPROVED") && (
           <div className="space-y-6">
+            {a.status === "PENDING" && (
+              <Card title="Review">
+                <Approve application={a} onDone={updated} />
+              </Card>
+            )}
+            <Card title="Reject">
+              <Reject application={a} onDone={updated} />
+            </Card>
             <Card title="Paid offline?">
               <RecordPayment
                 application={a}
@@ -249,7 +383,7 @@ export default function ApplicationDetailPage() {
               />
             </Card>
             <Card title="Cancel">
-              <CancelApplication application={a} onDone={(app) => setData((d) => ({ ...d, application: { ...d.application, ...app, documents: {} } }))} />
+              <CancelApplication application={a} onDone={(app) => updated(app, "Application cancelled.")} />
             </Card>
           </div>
         )}

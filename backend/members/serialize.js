@@ -99,6 +99,9 @@ function serializeApplication(a, { full = false } = {}) {
     createdAt: o.createdAt,
     memberId: o.memberId,
     cancelReason: o.cancelReason || "",
+    reviewedAt: o.reviewedAt || null,
+    reviewNote: o.reviewNote || "",
+    aadhaarVerified: !!(o.aadhaar && o.aadhaar.verified),
   };
   if (!full) return base;
   return { ...o, ...base, documents: documentInfo(o.documents) };

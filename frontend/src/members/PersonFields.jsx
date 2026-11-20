@@ -23,8 +23,12 @@ export default function PersonFields({
   pickFile,
   existingDocs = {},
   lockedEmail = "", // join form: the verified email, shown read-only
+  locked = [], // join form: fields filled from Aadhaar (DigiLocker), shown read-only
+  aadhaarVerified = false, // join form: identity verified through DigiLocker, no ID proof upload
   documentsNote = "Documents are stored privately and are only visible to the membership office.",
 }) {
+  const isLocked = (path) => locked.includes(path);
+  const lockedHint = "From your Aadhaar (DigiLocker).";
   const type = form.membershipType;
   const isStudent = type === "STUDENT";
   const isInstitution = type === "INSTITUTIONAL";
@@ -35,11 +39,12 @@ export default function PersonFields({
     const value = getIn(form, path) ?? "";
     const counter = maxLength ? `${String(value).length}/${maxLength} characters` : null;
     return (
-      <Field label={label} htmlFor={path} required={required} error={errors[path]} hint={hint || counter} className={className}>
+      <Field label={label} htmlFor={path} required={required} error={errors[path]} hint={isLocked(path) ? lockedHint : hint || counter} className={className}>
         <input
           id={path}
           type={inputType}
           className={inputClass(errors[path])}
+          disabled={isLocked(path)}
           value={value}
           maxLength={maxLength}
           placeholder={placeholder}
@@ -52,8 +57,14 @@ export default function PersonFields({
   };
 
   const select = (path, label, options, { required = true, className } = {}) => (
-    <Field label={label} htmlFor={path} required={required} error={errors[path]} className={className}>
-      <select id={path} className={inputClass(errors[path])} value={getIn(form, path) ?? ""} onChange={(e) => set(path, e.target.value)}>
+    <Field label={label} htmlFor={path} required={required} error={errors[path]} hint={isLocked(path) ? lockedHint : undefined} className={className}>
+      <select
+        id={path}
+        className={inputClass(errors[path])}
+        disabled={isLocked(path)}
+        value={getIn(form, path) ?? ""}
+        onChange={(e) => set(path, e.target.value)}
+      >
         <option value="">Select…</option>
         {options.map((o) => (
           <option key={o} value={o}>
@@ -154,10 +165,18 @@ export default function PersonFields({
       <Section title="Document uploads" description={documentsNote}>
         {fileField("photo")}
         {fileField("signature")}
-        {select("idProofType", "Type of ID card", config.idProofTypes)}
-        {fileField("idProof")}
+        {aadhaarVerified ? (
+          <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800 sm:col-span-2">
+            ID proof: your Aadhaar has been verified through DigiLocker, so you do not need to upload an ID card.
+          </p>
+        ) : (
+          <>
+            {select("idProofType", "Type of ID card", config.idProofTypes)}
+            {fileField("idProof")}
+          </>
+        )}
         {isStudent && fileField("studentId")}
-        {form.idProofType === "Aadhaar" && (
+        {!aadhaarVerified && form.idProofType === "Aadhaar" && (
           <p className="text-xs text-amber-700 sm:col-span-2">
             For Aadhaar, please upload a masked copy (only the last 4 digits visible), as UIDAI recommends.
           </p>

@@ -8,17 +8,23 @@ const { validateMember, normalizeEmail, isValidEmail } = require("../members/val
 const { serializeApplication } = require("../members/serialize");
 const { createCode, checkCode, CODE_MINUTES } = require("../auth/otp");
 const { createSession, requireJoin, JOIN_SESSION_HOURS } = require("../auth/sessions");
-const { sendCodeEmail, trySend } = require("../mail/mailer");
+const { sendCodeEmail, sendApplicationReceivedEmail, sendNewApplicationAdminEmail, trySend } = require("../mail/mailer");
 const { startCheckout, confirmFromBrowser, publicOrder } = require("../payments/service");
 const { memberUpload, pickFiles, checkFileContents, toStoredFile, removeUploaded, removeStoredFiles } = require("../documents/upload");
+const digilocker = require("../digilocker/service");
+const { MESSAGES: DIGILOCKER_MESSAGES } = require("../digilocker/errors");
+const { DIGILOCKER_TYPES } = require("../config/membership");
 
 // Public sign-up:
 //   1. POST /otp       email -> 6-digit code by email (refused if already a member)
 //   2. POST /verify    code  -> join token (header X-Join-Token on the next calls)
-//   3. POST /application      form + documents -> PENDING application
-//   4. POST /application/checkout             -> starts the online payment
+//   3. POST /application      form + documents -> PENDING application (waits for admin review)
+//   -- the admin approves it (APPROVED) and the applicant is emailed a link back here --
+//   4. POST /application/checkout             -> starts the online payment (APPROVED only)
 //   5. POST /orders/:id/confirm               -> browser reports the payment result
-// A PENDING application can be continued later by verifying the same email again.
+// The applicant sees the status of their application by verifying the same email again.
+
+const { OPEN_STATUSES } = Application;
 
 const router = express.Router();
 
@@ -47,10 +53,11 @@ async function cancelApplication(application, reason) {
   await removeStoredFiles(filesOf(application));
 }
 
+// The application to show the applicant: the open one, else the last paid or rejected one.
 async function latestApplication(email) {
   return (
-    (await Application.findOne({ email, status: "PENDING" }).sort({ createdAt: -1 })) ||
-    (await Application.findOne({ email, status: "PAID" }).sort({ updatedAt: -1 }))
+    (await Application.findOne({ email, status: { $in: OPEN_STATUSES } }).sort({ createdAt: -1 })) ||
+    (await Application.findOne({ email, status: { $in: ["PAID", "REJECTED"] } }).sort({ updatedAt: -1 }))
   );
 }
 
@@ -84,13 +91,23 @@ router.post("/verify", otpLimiter, async (req, res) => {
   if (await Member.exists({ email })) return res.status(409).json(MEMBER_EXISTS);
 
   const joinToken = await createSession("JOIN", email, JOIN_SESSION_HOURS);
-  const pending = await Application.findOne({ email, status: "PENDING" }).sort({ createdAt: -1 });
-  res.json({ joinToken, email, application: pending ? serializeApplication(pending) : null });
+  const latest = await latestApplication(email);
+  res.json({
+    joinToken,
+    email,
+    application: latest && latest.status !== "PAID" ? serializeApplication(latest) : null,
+    digilocker: await digilocker.latestVerified(email),
+  });
 });
 
-// GET /api/join/application — the pending application, or the one just paid.
+// GET /api/join/application — the open application, or the one just paid / rejected,
+// plus the applicant's DigiLocker verification (if any) to fill the form again.
 router.get("/application", requireJoin, async (req, res) => {
-  res.json(await applicationResponse(await latestApplication(req.joinEmail)));
+  res.json({
+    ...(await applicationResponse(await latestApplication(req.joinEmail))),
+    email: req.joinEmail,
+    digilocker: await digilocker.latestVerified(req.joinEmail),
+  });
 });
 
 // POST /api/join/application  (multipart: data=JSON, photo, signature, idProof, studentId)
@@ -108,7 +125,26 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
   }
   input.email = req.joinEmail; // always the verified address
 
-  const { data, errors } = validateMember(input, { files, mode: "public" });
+  // Filled from Aadhaar through DigiLocker: the locked fields always come from our own
+  // verified record, never from what the browser sent.
+  // A student who already verified cannot switch back to typing these details by hand.
+  let verified = null;
+  if (DIGILOCKER_TYPES.includes(input.membershipType)) {
+    verified = await digilocker.findVerified(req.joinEmail, input.digilockerId);
+    if (input.digilockerId && !verified) {
+      await removeUploaded(files);
+      return res.status(400).json({
+        code: "DIGILOCKER_EXPIRED",
+        message: "Your DigiLocker verification has expired. Please verify with DigiLocker again, or fill the form manually.",
+      });
+    }
+    if (verified) for (const k of digilocker.LOCKED) if (verified.aadhaar[k]) input[k] = verified.aadhaar[k];
+  }
+
+  const { data, errors } = validateMember(input, { files, mode: "public", aadhaarVerified: !!verified });
+  data.aadhaar = verified
+    ? { verified: true, verifiedAt: verified.verifiedAt, last4: verified.aadhaar.last4 || "", verificationId: verified.verificationId, provider: verified.provider }
+    : { verified: false };
   Object.assign(errors, await checkFileContents(files));
   if (Object.keys(errors).length) {
     await removeUploaded(files);
@@ -119,8 +155,8 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
     return res.status(409).json(MEMBER_EXISTS);
   }
 
-  // One pending application per email: a new submission replaces the old one.
-  const previous = await Application.find({ email: data.email, status: "PENDING" });
+  // One open application per email: a new submission replaces the old one (and goes back to review).
+  const previous = await Application.find({ email: data.email, status: { $in: OPEN_STATUSES } });
   for (const old of previous) await cancelApplication(old, "Replaced by a new application.");
 
   const application = await Application.create({
@@ -128,20 +164,48 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
     documents: Object.fromEntries(Object.entries(files).map(([k, f]) => [k, toStoredFile(f)])),
     termsAcceptedAt: new Date(),
   });
+  await trySend(() => sendApplicationReceivedEmail(application));
+  await trySend(() => sendNewApplicationAdminEmail(application));
   res.status(201).json(await applicationResponse(application));
 });
 
-// DELETE /api/join/application — start over.
-router.delete("/application", requireJoin, async (req, res) => {
-  const pending = await Application.find({ email: req.joinEmail, status: "PENDING" });
-  for (const a of pending) await cancelApplication(a, "Cancelled by the applicant.");
-  res.json({ cancelled: pending.length });
+// POST /api/join/digilocker/start { membershipType } -> { url } of the DigiLocker consent page.
+// 503 DIGILOCKER_UNAVAILABLE when Cashfree / DigiLocker can't be used: fill the form by hand.
+router.post("/digilocker/start", otpLimiter, requireJoin, async (req, res) => {
+  const type = String((req.body && req.body.membershipType) || "");
+  if (!DIGILOCKER_TYPES.includes(type)) return res.status(400).json({ message: "DigiLocker is not available for this membership type." });
+  if (await digilocker.latestVerified(req.joinEmail)) {
+    return res.status(409).json({ code: "DIGILOCKER_DONE", message: "Your Aadhaar is already verified through DigiLocker." });
+  }
+  try {
+    res.json(await digilocker.start(req.joinEmail, type));
+  } catch (err) {
+    res.status(503).json({
+      code: "DIGILOCKER_UNAVAILABLE",
+      message: `${DIGILOCKER_MESSAGES.UNAVAILABLE} Please fill the form manually; the membership office will review your documents.`,
+    });
+  }
 });
 
-// POST /api/join/application/checkout — start the online payment.
+// POST /api/join/digilocker/complete { verificationId } — the student is back from DigiLocker.
+// Always 200: { email, verified: true, prefill, locked, last4, verificationId }
+//          or { email, verified: false, kind, message } (then the form is filled by hand).
+router.post("/digilocker/complete", requireJoin, async (req, res) => {
+  const result = await digilocker.complete(req.joinEmail, req.body && req.body.verificationId);
+  res.json({ email: req.joinEmail, ...result });
+});
+
+// DELETE /api/join/application — withdraw the open application.
+router.delete("/application", requireJoin, async (req, res) => {
+  const open = await Application.find({ email: req.joinEmail, status: { $in: OPEN_STATUSES } });
+  for (const a of open) await cancelApplication(a, "Withdrawn by the applicant.");
+  res.json({ cancelled: open.length });
+});
+
+// POST /api/join/application/checkout — start the online payment (approved applications only).
 router.post("/application/checkout", requireJoin, async (req, res) => {
-  const application = await Application.findOne({ email: req.joinEmail, status: "PENDING" }).sort({ createdAt: -1 });
-  if (!application) return res.status(404).json({ message: "No application is waiting for payment." });
+  const application = await Application.findOne({ email: req.joinEmail, status: "APPROVED" }).sort({ createdAt: -1 });
+  if (!application) return res.status(404).json({ message: "Your application has not been approved yet, so it cannot be paid for." });
   if (await Member.exists({ email: req.joinEmail })) return res.status(409).json(MEMBER_EXISTS);
   res.json({ checkout: await startCheckout({ purpose: "NEW", application }) });
 });

@@ -12,9 +12,11 @@ const {
   SOCIAL_LINKS,
   RENEWAL_WINDOW_DAYS,
   PENDING_APPLICATION_DAYS,
+  DIGILOCKER_TYPES,
 } = require("../config/membership");
 const content = require("../config/content");
 const { activeProvider, paymentsProblem } = require("../payments/provider");
+const { digilockerProblem } = require("../digilocker/provider");
 const { buildMemberFilter, pagination } = require("../members/query");
 const { serializePublicRow, effectiveStatus, typeLabel } = require("../members/serialize");
 const { filePath } = require("../documents/upload");
@@ -40,6 +42,10 @@ router.get("/config", (req, res) => {
     onlinePayments: {
       enabled: !paymentsProblem(),
       provider: provider && !paymentsProblem() ? provider.name : "",
+    },
+    digilocker: {
+      enabled: !digilockerProblem(),
+      types: DIGILOCKER_TYPES,
     },
   });
 });

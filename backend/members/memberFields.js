@@ -54,6 +54,16 @@ const personFields = {
   },
 
   showInPublicList: { type: Boolean, default: false },
+
+  // Identity checked against Aadhaar through DigiLocker on the join form.
+  // Only the last 4 digits of the Aadhaar number are ever stored.
+  aadhaar: {
+    verified: { type: Boolean, default: false },
+    verifiedAt: { type: Date, default: null },
+    last4: { type: String, default: "" },
+    verificationId: { type: String, default: "" },
+    provider: { type: String, default: "" },
+  },
 };
 
 // Field names copied from an Application to a new Member.

@@ -9,7 +9,7 @@ const { serializeApplication } = require("../members/serialize");
 const { pagination } = require("../members/query");
 const { todayIST, parseDateOnly } = require("../shared/dates");
 const { DOCUMENT_FIELDS, filePath, removeStoredFiles } = require("../documents/upload");
-const { sendCardEmail, trySend } = require("../mail/mailer");
+const { sendCardEmail, sendApplicationApprovedEmail, sendApplicationRejectedEmail, trySend } = require("../mail/mailer");
 const { providerByName, paymentsProblem, activeProvider } = require("../payments/provider");
 const { createMemberFromApplication, confirmFromBrowser, serializeOrder } = require("../payments/service");
 
@@ -44,8 +44,9 @@ async function loadById(Model, id, res, label) {
 router.get("/overview", async (req, res) => {
   const today = todayIST();
   const monthStart = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1));
-  const [pendingApplications, attention, paidThisMonth] = await Promise.all([
+  const [pendingApplications, approvedApplications, attention, paidThisMonth] = await Promise.all([
     Application.countDocuments({ status: "PENDING" }),
+    Application.countDocuments({ status: "APPROVED" }),
     PaymentOrder.countDocuments({ failureReason: { $ne: "" }, status: { $in: ["PAID", "CREATED"] } }),
     PaymentOrder.aggregate([
       { $match: { status: "PAID", paidAt: { $gte: monthStart } } },
@@ -54,6 +55,7 @@ router.get("/overview", async (req, res) => {
   ]);
   res.json({
     pendingApplications,
+    approvedApplications,
     paymentsNeedingAttention: attention,
     onlineThisMonth: paidThisMonth[0] ? { total: paidThisMonth[0].total, count: paidThisMonth[0].count } : { total: 0, count: 0 },
     onlinePayments: { enabled: !paymentsProblem(), provider: activeProvider() ? activeProvider().name : "", problem: paymentsProblem() },
@@ -64,7 +66,7 @@ router.get("/overview", async (req, res) => {
 
 // GET /api/admin/applications?status=PENDING&search=&page=
 router.get("/applications", async (req, res) => {
-  const status = ["PENDING", "PAID", "CANCELLED"].includes(one(req.query.status)) ? one(req.query.status) : "PENDING";
+  const status = ["PENDING", "APPROVED", "PAID", "REJECTED", "CANCELLED"].includes(one(req.query.status)) ? one(req.query.status) : "PENDING";
   const filter = { status, ...searchFilter(req.query, ["name", "email", "whatsapp"]) };
   const { page, limit, skip } = pagination(req.query);
   const [items, total] = await Promise.all([
@@ -109,12 +111,58 @@ router.get("/applications/:id/files/:kind", async (req, res) => {
   });
 });
 
+const isOpen = (application) => Application.OPEN_STATUSES.includes(application.status);
+
+async function deleteDocuments(application) {
+  const docs = application.documents ? application.documents.toObject() : {};
+  await removeStoredFiles(Object.values(docs).map((f) => f && f.filename));
+}
+
+// POST /api/admin/applications/:id/approve
+// The applicant is emailed a link to pay; the member is created once they pay.
+router.post("/applications/:id/approve", async (req, res) => {
+  const application = await loadById(Application, req.params.id, res, "Application");
+  if (!application) return;
+  if (application.status !== "PENDING") return res.status(400).json({ message: "Only applications waiting for review can be approved." });
+  if (await Member.exists({ email: application.email })) {
+    return res.status(409).json({ message: "A member with this email address already exists." });
+  }
+  application.status = "APPROVED";
+  application.reviewedAt = new Date();
+  application.reviewNote = "";
+  await application.save();
+  const email = await trySend(() => sendApplicationApprovedEmail(application));
+  res.json({ application: serializeApplication(application, { full: true }), email });
+});
+
+// POST /api/admin/applications/:id/reject { reason }
+// The reason is emailed to the applicant; the uploaded documents are deleted.
+router.post("/applications/:id/reject", async (req, res) => {
+  const application = await loadById(Application, req.params.id, res, "Application");
+  if (!application) return;
+  if (!isOpen(application)) return res.status(400).json({ message: "Only applications waiting for review or payment can be rejected." });
+  const reason = String((req.body && req.body.reason) || "").trim().slice(0, 500);
+  if (!reason) return res.status(400).json({ message: "Enter the reason. It is sent to the applicant.", errors: { reason: "Enter the reason." } });
+
+  application.status = "REJECTED";
+  application.reviewedAt = new Date();
+  application.reviewNote = reason;
+  await application.save();
+  await deleteDocuments(application);
+  await PaymentOrder.updateMany(
+    { applicationId: application._id, status: "CREATED" },
+    { $set: { status: "FAILED", failureReason: "Closed: the application was rejected." } }
+  );
+  const email = await trySend(() => sendApplicationRejectedEmail(application, reason));
+  res.json({ application: serializeApplication(application, { full: true }), email });
+});
+
 // POST /api/admin/applications/:id/record-payment { amount, mode, reference, date }
-// The applicant paid offline (bank transfer, cash ...): register them now.
+// The applicant paid offline (bank transfer, cash ...): approve and register them now.
 router.post("/applications/:id/record-payment", async (req, res) => {
   const application = await loadById(Application, req.params.id, res, "Application");
   if (!application) return;
-  if (application.status !== "PENDING") return res.status(400).json({ message: "Only pending applications can be registered." });
+  if (!isOpen(application)) return res.status(400).json({ message: "Only applications waiting for review or payment can be registered." });
   if (await Member.exists({ email: application.email })) {
     return res.status(409).json({ message: "A member with this email address already exists." });
   }
@@ -123,6 +171,7 @@ router.post("/applications/:id/record-payment", async (req, res) => {
   const payment = validatePayment(req.body || {}, errors, { defaultDate: todayIST(), prefix: "payment" });
   if (Object.keys(errors).length) return res.status(400).json({ message: "Please correct the highlighted fields.", errors });
 
+  if (!application.reviewedAt) application.reviewedAt = new Date();
   const { member, entry } = await createMemberFromApplication(application, { ...payment, source: "OFFLINE" });
   await PaymentOrder.updateMany(
     { applicationId: application._id, status: "CREATED" },
@@ -136,12 +185,11 @@ router.post("/applications/:id/record-payment", async (req, res) => {
 router.post("/applications/:id/cancel", async (req, res) => {
   const application = await loadById(Application, req.params.id, res, "Application");
   if (!application) return;
-  if (application.status !== "PENDING") return res.status(400).json({ message: "Only pending applications can be cancelled." });
+  if (!isOpen(application)) return res.status(400).json({ message: "Only applications waiting for review or payment can be cancelled." });
   application.status = "CANCELLED";
   application.cancelReason = String((req.body && req.body.reason) || "Cancelled by the admin.").slice(0, 300);
   await application.save();
-  const docs = application.documents ? application.documents.toObject() : {};
-  await removeStoredFiles(Object.values(docs).map((f) => f && f.filename));
+  await deleteDocuments(application);
   res.json({ application: serializeApplication(application) });
 });
 

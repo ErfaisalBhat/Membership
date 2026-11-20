@@ -69,7 +69,7 @@ export default function DashboardPage() {
         <Stat label="Active" value={stats.active} tone="text-green-700" to="/admin/members?status=ACTIVE" />
         <Stat label="Expired" value={stats.expired} tone="text-amber-700" to="/admin/members?status=EXPIRED" />
         <Stat label="Expiring in 30 days" value={stats.expiringSoon} tone="text-brand-700" to="/admin/members?expiring=30" />
-        <Stat label="Applications" value={overview.pendingApplications} tone="text-amber-700" note="waiting for payment" to="/admin/applications" />
+        <Stat label="Applications" value={overview.pendingApplications} tone="text-amber-700" note="waiting for review" to="/admin/applications" />
         <Stat
           label="Online this month"
           value={formatMoney(overview.onlineThisMonth.total)}
@@ -111,7 +111,7 @@ export default function DashboardPage() {
         </Card>
 
         <Card
-          title="Waiting for payment"
+          title="Waiting for your review"
           padded={false}
           action={
             <Link to="/admin/applications" className={buttonClass.ghost}>
@@ -120,7 +120,7 @@ export default function DashboardPage() {
           }
         >
           {applications.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-slate-500">No pending applications.</p>
+            <p className="px-5 py-8 text-center text-sm text-slate-500">No applications are waiting for review.</p>
           ) : (
             <ul className="divide-y divide-slate-100">
               {applications.map((a) => (
@@ -132,7 +132,7 @@ export default function DashboardPage() {
                         {a.typeLabel} · applied {formatDate(a.createdAt)}
                       </p>
                     </div>
-                    {a.lastAttempt?.status === "FAILED" && <StatusBadge status="FAILED" label="Payment failed" />}
+                    <StatusBadge status="PENDING" />
                   </Link>
                 </li>
               ))}

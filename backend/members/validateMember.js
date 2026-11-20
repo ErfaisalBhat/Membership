@@ -104,7 +104,9 @@ function validateAffiliation(input, type, errors, data) {
  * (the membership type can't change on edit). Returns { data, errors } — errors is keyed
  * by field path, e.g. "address.pincode".
  */
-function validateMember(input, { files = {}, existing = null, mode = "admin" } = {}) {
+// aadhaarVerified: the join form was filled from Aadhaar through DigiLocker, so the ID proof
+// is Aadhaar and no ID proof upload is needed.
+function validateMember(input, { files = {}, existing = null, mode = "admin", aadhaarVerified = false } = {}) {
   const errors = {};
   const data = {};
   const isNew = !existing;
@@ -145,10 +147,10 @@ function validateMember(input, { files = {}, existing = null, mode = "admin" } =
   validateAffiliation(input, type, errors, data);
 
   // Documents
-  data.idProofType = s(input.idProofType);
+  data.idProofType = aadhaarVerified ? "Aadhaar" : s(input.idProofType);
   if (!ID_PROOF_TYPES.includes(data.idProofType)) errors.idProofType = "Select the type of ID card.";
 
-  const needed = ["photo", "signature", "idProof", ...(isStudent ? ["studentId"] : [])];
+  const needed = ["photo", "signature", ...(aadhaarVerified ? [] : ["idProof"]), ...(isStudent ? ["studentId"] : [])];
   for (const key of needed) {
     const hasExisting = existing && existing.documents && existing.documents[key] && existing.documents[key].filename;
     if (!files[key] && !hasExisting) errors[`documents.${key}`] = "This document is required.";

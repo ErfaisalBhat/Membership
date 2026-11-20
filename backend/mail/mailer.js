@@ -1,7 +1,16 @@
 const fs = require("fs");
 const path = require("path");
 const nodemailer = require("nodemailer");
-const { MEMBERSHIP_TYPES, ORG_NAME, ORG_CODE, FRONTEND_URL, CONTACT, SOCIAL_LINKS, PENDING_APPLICATION_DAYS } = require("../config/membership");
+const {
+  MEMBERSHIP_TYPES,
+  ORG_NAME,
+  ORG_CODE,
+  FRONTEND_URL,
+  CONTACT,
+  ADMIN_NOTIFY_EMAIL,
+  SOCIAL_LINKS,
+  PENDING_APPLICATION_DAYS,
+} = require("../config/membership");
 const { dottedDate } = require("../shared/dates");
 const { generateIdCard } = require("../idcard/idCard");
 const { generateReceipt } = require("../idcard/receipt");
@@ -307,12 +316,94 @@ async function sendPaymentIncompleteEmail(application) {
     title: "Membership Payment Not Completed",
     greeting: greetingFor(application),
     blocks: [
-      p(`We received your application for ${type ? type.label : "membership"}, but the payment was not completed. No membership has been issued yet.`),
+      p(`Your application for ${type ? type.label : "membership"} was approved, but the payment was not completed. No membership has been issued yet.`),
       p(
-        `Your details and documents have been saved for ${PENDING_APPLICATION_DAYS} days. To complete your membership, open the link below, verify your email address and continue to payment. You will not need to fill the form again.`
+        `Your approved application is kept for ${PENDING_APPLICATION_DAYS} days from the date of approval. To complete your membership, open the link below, verify your email address and continue to payment. You will not need to fill the form again.`
       ),
-      button("Complete my payment", `${FRONTEND_URL}/join`),
+      button("Complete my payment", `${FRONTEND_URL}/join?continue=1`),
       p("If money was deducted from your account, please do not pay again. Contact us with the transaction details and we will check it for you."),
+      contactLine(),
+    ],
+  });
+}
+
+// ---------- Application review ----------
+
+function applicationRows(application) {
+  const type = MEMBERSHIP_TYPES[application.membershipType];
+  return [
+    ["Applicant", application.name],
+    ["Membership Type", type ? type.label : application.membershipType],
+    ["Fee", type ? `Rs. ${type.fee}` : ""],
+    ["Date of Application", dottedDate(application.createdAt || new Date())],
+  ];
+}
+
+// To the applicant, right after they submit the form.
+async function sendApplicationReceivedEmail(application) {
+  return send({
+    to: application.email,
+    subject: `Your ${ORG_CODE} membership application has been received`,
+    title: "Membership Application Received",
+    greeting: greetingFor(application),
+    blocks: [
+      p(`Thank you for applying for membership of ${ORG_NAME}. We have received your application and documents.`),
+      table(applicationRows(application)),
+      p(
+        "Your application will now be reviewed by the Membership Section. You do not need to pay anything yet. We will email you once it has been reviewed; if it is approved, the email will have a link to pay the membership fee online."
+      ),
+      contactLine(),
+    ],
+  });
+}
+
+// To the membership office: a new application is waiting for review.
+async function sendNewApplicationAdminEmail(application) {
+  if (!ADMIN_NOTIFY_EMAIL) return { simulated: true };
+  return send({
+    to: ADMIN_NOTIFY_EMAIL,
+    subject: `New membership application: ${application.name}`,
+    title: "New Membership Application",
+    greeting: "Membership Section",
+    blocks: [
+      p("A new membership application has been submitted and is waiting for your review."),
+      table([...applicationRows(application), ["Email", application.email], ["WhatsApp", application.whatsapp]]),
+      button("Review the application", `${FRONTEND_URL}/admin/applications/${application._id}`),
+    ],
+  });
+}
+
+// To the applicant: approved, please pay.
+async function sendApplicationApprovedEmail(application) {
+  return send({
+    to: application.email,
+    subject: `Your ${ORG_CODE} membership application has been approved`,
+    title: "Membership Application Approved",
+    greeting: greetingFor(application),
+    blocks: [
+      p(`We are pleased to inform you that your application for membership of ${ORG_NAME} has been approved.`),
+      table(applicationRows(application)),
+      p(
+        `To complete your membership, please pay the membership fee within ${PENDING_APPLICATION_DAYS} days. Open the link below, verify your email address with the one-time code we send you, and continue to payment. Your membership number and ID card will be emailed to you as soon as the payment is confirmed.`
+      ),
+      button("Pay the membership fee", `${FRONTEND_URL}/join?continue=1`),
+      contactLine(),
+    ],
+  });
+}
+
+// To the applicant: not approved, with the reason given by the admin.
+async function sendApplicationRejectedEmail(application, reason) {
+  return send({
+    to: application.email,
+    subject: `Your ${ORG_CODE} membership application`,
+    title: "Membership Application",
+    greeting: greetingFor(application),
+    blocks: [
+      p(`Thank you for your interest in ${ORG_NAME}. After review, we are unable to approve your membership application at this time.`),
+      ...(reason ? [table([["Reason", reason]])] : []),
+      p("No payment has been taken. Your uploaded documents have been deleted from our records."),
+      p("If you believe this is a mistake, or you can provide the missing information, you are welcome to submit a new application."),
       contactLine(),
     ],
   });
@@ -334,6 +425,10 @@ module.exports = {
   sendReminderEmail,
   sendCodeEmail,
   sendPaymentIncompleteEmail,
+  sendApplicationReceivedEmail,
+  sendNewApplicationAdminEmail,
+  sendApplicationApprovedEmail,
+  sendApplicationRejectedEmail,
   trySend,
   EMAIL_LOG_ONLY: LOG_ONLY,
 };

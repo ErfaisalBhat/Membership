@@ -8,7 +8,8 @@ const STEPS = [
   { title: "Choose a plan", text: "Student, Annual, Life or Institutional membership." },
   { title: "Verify your email", text: "We send a 6-digit code. Your ID card is delivered to this address." },
   { title: "Fill the form", text: "Your details, address, affiliation and documents (photo, signature, ID)." },
-  { title: "Pay online", text: "Your membership number and ID card are issued as soon as the payment is confirmed." },
+  { title: "Application review", text: "The Membership Section reviews your application and emails you the result." },
+  { title: "Pay online", text: "Once approved, pay the fee. Your membership number and ID card are issued as soon as the payment is confirmed." },
 ];
 
 export default function HomePage() {
@@ -65,7 +66,7 @@ export default function HomePage() {
       <section className="border-y border-slate-200 bg-white">
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900">How to join</h2>
-          <ol className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+          <ol className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-5">
             {STEPS.map((s, i) => (
               <li key={s.title} className="relative">
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-700 text-sm font-semibold text-white">{i + 1}</span>

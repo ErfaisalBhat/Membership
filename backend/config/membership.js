@@ -27,8 +27,12 @@ const REMINDER_DAYS = [30, 7];
 // Members can renew online once their membership is this close to expiry (or already expired).
 const RENEWAL_WINDOW_DAYS = 60;
 
-// Unpaid online applications are cancelled (and their files deleted) after this many days.
+// Approved online applications that are not paid within this many days of approval
+// are cancelled (and their files deleted). Applications waiting for review are kept.
 const PENDING_APPLICATION_DAYS = 30;
+
+// Membership types that can fill the join form from Aadhaar through DigiLocker.
+const DIGILOCKER_TYPES = ["STUDENT"];
 
 const ORG_NAME = process.env.ORG_NAME || "Membership Portal";
 const ORG_CODE = (process.env.ORG_CODE || "ORG").toUpperCase();
@@ -41,6 +45,9 @@ const CONTACT = {
   address: process.env.CONTACT_ADDRESS || "",
   website: process.env.WEBSITE_URL || "",
 };
+
+// Who is told by email when a new application arrives for review (empty = nobody).
+const ADMIN_NOTIFY_EMAIL = process.env.ADMIN_NOTIFY_EMAIL || CONTACT.email;
 
 // Links shown at the bottom of emails and the website. Empty values are left out.
 const SOCIAL_LINKS = [
@@ -62,9 +69,11 @@ module.exports = {
   REMINDER_DAYS,
   RENEWAL_WINDOW_DAYS,
   PENDING_APPLICATION_DAYS,
+  DIGILOCKER_TYPES,
   ORG_NAME,
   ORG_CODE,
   FRONTEND_URL,
   CONTACT,
+  ADMIN_NOTIFY_EMAIL,
   SOCIAL_LINKS,
 };

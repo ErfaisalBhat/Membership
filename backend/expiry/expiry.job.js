@@ -12,7 +12,8 @@ const { removeStoredFiles } = require("../documents/upload");
 // 2. Emails a renewal reminder 30 and 7 days before expiry (once each).
 //    If the server was down on the exact day, the reminder still goes out on the next run.
 // 3. Closes online payments that were started but never finished (after 1 day).
-// 4. Cancels unpaid online applications after PENDING_APPLICATION_DAYS and deletes their documents.
+// 4. Cancels approved online applications not paid within PENDING_APPLICATION_DAYS of approval
+//    and deletes their documents.
 async function runExpiryJob() {
   const today = todayIST();
 
@@ -48,13 +49,14 @@ async function runExpiryJob() {
     { $set: { status: "FAILED", failureReason: "Abandoned: no payment was received." } }
   );
 
+  // Only approved-but-unpaid applications expire; ones waiting for review stay until the admin acts.
   const stale = await Application.find({
-    status: "PENDING",
-    createdAt: { $lt: new Date(Date.now() - PENDING_APPLICATION_DAYS * 24 * 3600 * 1000) },
+    status: "APPROVED",
+    reviewedAt: { $lt: new Date(Date.now() - PENDING_APPLICATION_DAYS * 24 * 3600 * 1000) },
   });
   for (const application of stale) {
     application.status = "CANCELLED";
-    application.cancelReason = `Not paid within ${PENDING_APPLICATION_DAYS} days.`;
+    application.cancelReason = `Not paid within ${PENDING_APPLICATION_DAYS} days of approval.`;
     await application.save();
     const docs = application.documents ? application.documents.toObject() : {};
     await removeStoredFiles(Object.values(docs).map((f) => f && f.filename));

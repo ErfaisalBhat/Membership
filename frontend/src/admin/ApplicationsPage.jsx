@@ -7,12 +7,19 @@ import Pagination from "../ui/Pagination";
 import { Alert, EmptyState, PageHeader, Spinner, inputClass } from "../ui/form";
 
 const TABS = [
-  ["PENDING", "Waiting for payment"],
+  ["PENDING", "Awaiting review"],
+  ["APPROVED", "Approved, awaiting payment"],
   ["PAID", "Paid"],
+  ["REJECTED", "Rejected"],
   ["CANCELLED", "Cancelled"],
 ];
 
-// Online sign-ups. Pending ones have not been paid yet.
+const EMPTY = {
+  PENDING: "No applications are waiting for review.",
+  APPROVED: "No approved applications are waiting for payment.",
+};
+
+// Online sign-ups: reviewed by the admin first, then paid by the applicant.
 export default function ApplicationsPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
@@ -55,7 +62,7 @@ export default function ApplicationsPage() {
 
   return (
     <div>
-      <PageHeader title="Applications" subtitle="People who applied on the website. A member is created automatically when the online payment is confirmed." />
+      <PageHeader title="Applications" subtitle="People who applied on the website. Review each application: approved applicants are emailed a link to pay, and become members once the payment is confirmed." />
       <div className="space-y-4">
         <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200">
           {TABS.map(([key, label]) => (
@@ -83,7 +90,7 @@ export default function ApplicationsPage() {
         {!data ? (
           !error && <Spinner />
         ) : data.items.length === 0 ? (
-          <EmptyState>{status === "PENDING" ? "No applications are waiting for payment." : "Nothing here."}</EmptyState>
+          <EmptyState>{EMPTY[status] || "Nothing here."}</EmptyState>
         ) : (
           <>
             <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-xs">
@@ -107,12 +114,13 @@ export default function ApplicationsPage() {
                         <div className="text-xs text-slate-500">
                           {a.email} · {a.whatsapp}
                         </div>
+                        {a.aadhaarVerified && <div className="mt-0.5 text-xs font-medium text-green-700">Aadhaar verified (DigiLocker)</div>}
                       </td>
                       <td className="whitespace-nowrap px-4 py-3">{a.typeLabel}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{formatMoney(a.amount)}</td>
                       <td className="whitespace-nowrap px-4 py-3 tabular-nums">{formatDate(a.createdAt)}</td>
                       <td className="px-4 py-3">
-                        {a.status === "PENDING" && a.lastAttempt?.status === "FAILED" ? (
+                        {a.status === "APPROVED" && a.lastAttempt?.status === "FAILED" ? (
                           <StatusBadge status="FAILED" label="Payment failed" />
                         ) : (
                           <StatusBadge status={a.status} />

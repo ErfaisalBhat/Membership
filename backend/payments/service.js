@@ -26,7 +26,7 @@ async function addPayment(member, entry) {
 }
 
 // Creates a Member from a paid Application. Used for online payments and when the
-// admin records an offline payment for a pending application.
+// admin records an offline payment for an application.
 async function createMemberFromApplication(application, payment) {
   const joinDate = todayIST();
   const expiryDate = computeExpiry(joinDate, MEMBERSHIP_TYPES[application.membershipType].validityMonths);
@@ -128,6 +128,13 @@ async function activateOrder(orderId, { paymentId = "", method = "" } = {}) {
         console.error(`[PAYMENT] ${order.orderNo}: duplicate payment for application ${order.applicationId}`);
         return order;
       }
+      if (application.status !== "APPROVED") {
+        // e.g. the admin rejected or the applicant withdrew it while the payment was in progress.
+        order.failureReason = `Paid, but the application is ${application.status.toLowerCase()}, not approved. Review it and refund if needed.`;
+        await order.save();
+        console.error(`[PAYMENT] ${order.orderNo}: application ${application._id} is ${application.status}`);
+        return order;
+      }
       if (await Member.exists({ email: application.email })) {
         order.failureReason = "Paid, but a member with this email already exists. Check the member and refund if needed.";
         await order.save();
@@ -180,7 +187,7 @@ async function failOrder(orderId, reason) {
   if (!order) return PaymentOrder.findById(orderId);
   if (order.purpose === "NEW") {
     const application = await Application.findById(order.applicationId);
-    if (application && application.status === "PENDING") await trySend(() => sendPaymentIncompleteEmail(application));
+    if (application && application.status === "APPROVED") await trySend(() => sendPaymentIncompleteEmail(application));
   }
   return order;
 }

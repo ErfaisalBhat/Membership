@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
+  --font-sans: "Inter", "Noto Sans Devanagari", ui-sans-serif, system-ui, "Segoe UI", Roboto, Arial, sans-serif;
 
   /* Navy, matching the ID card and emails */
   --color-brand-50: #eef3fa;
