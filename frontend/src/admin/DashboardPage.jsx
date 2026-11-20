@@ -55,11 +55,6 @@ export default function DashboardPage() {
         }
       />
 
-      {!overview.onlinePayments.enabled && (
-        <Alert kind="info" title="Online payments are switched off">
-          {overview.onlinePayments.problem} Applicants can still apply; you can register them from Applications when they pay offline.
-        </Alert>
-      )}
       {overview.paymentsNeedingAttention > 0 && (
         <Alert kind="warning" title={`${overview.paymentsNeedingAttention} payment(s) need attention`}>
           Money was received but something went wrong (for example, paid twice).{" "}
