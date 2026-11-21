@@ -74,10 +74,20 @@ module.exports = {
     if (!process.env.CASHFREE_VERIFY_CLIENT_ID || !process.env.CASHFREE_VERIFY_CLIENT_SECRET) {
       return "Cashfree DigiLocker keys are not set (CASHFREE_VERIFY_CLIENT_ID / CASHFREE_VERIFY_CLIENT_SECRET).";
     }
+    // Cashfree rejects a non-https redirect_url ("redirect_url should start with https"),
+    // so localhost only works through an https tunnel (FRONTEND_URL=https://…).
     if (!/^https:\/\//.test(process.env.FRONTEND_URL || "")) {
       return "DigiLocker needs the website on https (FRONTEND_URL must start with https://).";
     }
     return null;
+  },
+
+  // Health check: asks the status of a verification that doesn't exist. Cashfree answering
+  // "not found" (4xx) means it is up and accepts our keys; a network error, timeout, 5xx,
+  // or 401/403 (keys or IP refused) means DigiLocker can't be used right now.
+  async ping() {
+    const r = await call("GET", `/digilocker?verification_id=healthcheck-${Date.now()}`);
+    return r.status < 500 && r.status !== 401 && r.status !== 403;
   },
 
   async createUrl({ verificationId, redirectUrl, purpose, companyName }) {

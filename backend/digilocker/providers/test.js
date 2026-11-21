@@ -39,6 +39,10 @@ module.exports = {
     return null;
   },
 
+  async ping() {
+    return !failing();
+  },
+
   async createUrl({ redirectUrl }) {
     if (failing()) throw new DigilockerError("UNAVAILABLE", "Test: DIGILOCKER_TEST_FAIL=1");
     return { url: redirectUrl };

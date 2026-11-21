@@ -12,6 +12,7 @@ const { sendCodeEmail, sendApplicationReceivedEmail, sendNewApplicationAdminEmai
 const { startCheckout, confirmFromBrowser, publicOrder } = require("../payments/service");
 const { memberUpload, pickFiles, checkFileContents, toStoredFile, removeUploaded, removeStoredFiles } = require("../documents/upload");
 const digilocker = require("../digilocker/service");
+const digilockerHealth = require("../digilocker/health");
 const { MESSAGES: DIGILOCKER_MESSAGES } = require("../digilocker/errors");
 const { DIGILOCKER_TYPES } = require("../config/membership");
 
@@ -167,6 +168,12 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
   await trySend(() => sendApplicationReceivedEmail(application));
   await trySend(() => sendNewApplicationAdminEmail(application));
   res.status(201).json(await applicationResponse(application));
+});
+
+// GET /api/join/digilocker/available -> { available } — asked before showing the DigiLocker
+// screen; when false (Cashfree down) the student goes straight to the manual form.
+router.get("/digilocker/available", async (req, res) => {
+  res.json({ available: await digilockerHealth.isAvailable() });
 });
 
 // POST /api/join/digilocker/start { membershipType } -> { url } of the DigiLocker consent page.

@@ -71,6 +71,7 @@ export default function JoinPage() {
   const [digi, setDigi] = useState(null);
   const [savedDigi, setSavedDigi] = useState(null); // this email's verification, kept from the server
   const [manual, setManual] = useState(false);
+  const [digiAvailable, setDigiAvailable] = useState(null); // null = not asked yet; false = Cashfree down
   const [digiNotice, setDigiNotice] = useState("");
   const topRef = useRef(null);
 
@@ -390,12 +391,32 @@ export default function JoinPage() {
   );
   const onCancel = useCallback(() => setCheckout(null), []);
 
+  // Before offering DigiLocker, ask the server whether Cashfree is up. If it isn't,
+  // go straight to the manual form without showing the DigiLocker screen.
+  const wantsDigilocker = step === "details" && !!config?.digilocker?.enabled && !!config?.digilocker?.types?.includes(plan) && !digi && !manual;
+  useEffect(() => {
+    if (!wantsDigilocker || digiAvailable !== null) return;
+    let cancelled = false;
+    api("/join/digilocker/available", { auth: false })
+      .then((res) => !!res.available)
+      .catch(() => false)
+      .then((available) => {
+        if (cancelled) return;
+        setDigiAvailable(available);
+        if (!available) setManual(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [wantsDigilocker, digiAvailable]);
+
   if (configError) return <div className="mx-auto max-w-3xl px-4 py-10"><Alert>{configError.message}</Alert></div>;
   if (!config || step === "loading") return <Spinner />;
 
   const chosen = typeInfo(config, plan);
   const digilockerOn = !!config.digilocker?.enabled && config.digilocker.types.includes(plan);
   const askDigilocker = digilockerOn && !digi && !manual; // offer DigiLocker before showing the form
+  if (askDigilocker && step === "details" && digiAvailable !== true) return <Spinner />; // checking Cashfree
   const appType = application ? typeInfo(config, application.membershipType) : null;
 
   return (
@@ -561,7 +582,7 @@ export default function JoinPage() {
           {!digi && digiNotice && (
             <Alert kind="warning" title="Please fill the form manually">
               {digiNotice} Fill in your details below and upload your documents; the membership office will review them.
-              {digilockerOn && (
+              {digilockerOn && digiAvailable !== false && (
                 <button type="button" className={`${buttonClass.ghost} ml-1`} disabled={busy} onClick={startDigilocker}>
                   Try DigiLocker again
                 </button>

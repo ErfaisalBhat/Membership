@@ -3,6 +3,7 @@ const DigilockerVerification = require("./DigilockerVerification");
 const { digilockerProvider, digilockerProblem } = require("./provider");
 const { DigilockerError, MESSAGES } = require("./errors");
 const { mapAadhaar } = require("./aadhaar");
+const health = require("./health");
 const { FRONTEND_URL, ORG_CODE } = require("../config/membership");
 
 // Aadhaar auto-fill for the join form:
@@ -45,6 +46,7 @@ async function start(email, membershipType) {
     record.failureDetail = String(err.message).slice(0, 300);
     await record.save();
     console.error(`[DIGILOCKER] start failed for ${verificationId}:`, err.message);
+    if (record.failureKind === "UNAVAILABLE") health.markDown(err.message);
     throw err instanceof DigilockerError ? err : new DigilockerError("UNAVAILABLE", err.message);
   }
 }
