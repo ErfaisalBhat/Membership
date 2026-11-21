@@ -139,7 +139,15 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
         message: "Your DigiLocker verification has expired. Please verify with DigiLocker again, or fill the form manually.",
       });
     }
-    if (verified) for (const k of digilocker.LOCKED) if (verified.aadhaar[k]) input[k] = verified.aadhaar[k];
+    if (verified) {
+      digilocker.applyVerified(input, verified);
+      // The Aadhaar photo is the passport photograph; any photo uploaded instead is dropped.
+      const photo = await digilocker.photoFile(verified);
+      if (photo) {
+        if (files.photo) await removeUploaded({ photo: files.photo });
+        files.photo = photo;
+      }
+    }
   }
 
   const { data, errors } = validateMember(input, { files, mode: "public", aadhaarVerified: !!verified });

@@ -123,7 +123,8 @@ module.exports = {
       if (d.status !== 200) throw fail("Get document", d);
       if (d.data.status === "AADHAAR_NOT_LINKED") throw new DigilockerError("NOT_LINKED", "Aadhaar not linked");
       if (d.data.status !== "SUCCESS") throw new DigilockerError("UNAVAILABLE", `Document status ${d.data.status}`);
-      return d.data;
+      // The status reply's user_details carries the Aadhaar-linked mobile number.
+      return { ...d.data, user_details: s.data.user_details || {} };
     }
     throw new DigilockerError("UNAVAILABLE", "Document still processing after several tries");
   },

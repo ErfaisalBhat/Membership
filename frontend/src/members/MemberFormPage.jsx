@@ -31,6 +31,7 @@ function fromMember(m) {
     address: { ...f.address, ...m.address },
     affiliation: { ...f.affiliation, ...m.affiliation },
     idProofType: m.idProofType || "",
+    aadhaarVerified: !!m.aadhaar?.verified, // joined through DigiLocker: no ID proof upload
     showInPublicList: !!m.showInPublicList,
     remarks: m.remarks || "",
   };

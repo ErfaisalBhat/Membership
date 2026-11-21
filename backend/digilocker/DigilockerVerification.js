@@ -18,6 +18,8 @@ const verificationSchema = new mongoose.Schema(
       gender: String,
       fatherName: String,
       address: { line1: String, line2: String, city: String, state: String, pincode: String },
+      mobile: String, // Aadhaar-linked mobile, suggested as the WhatsApp number
+      photo: { data: Buffer, mimeType: String }, // used as the passport photograph
       last4: String,
     },
     createdAt: { type: Date, default: Date.now, expires: 30 * 24 * 3600 },

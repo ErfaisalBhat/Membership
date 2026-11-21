@@ -1,8 +1,10 @@
 const crypto = require("crypto");
+const fs = require("fs");
 const DigilockerVerification = require("./DigilockerVerification");
 const { digilockerProvider, digilockerProblem } = require("./provider");
 const { DigilockerError, MESSAGES } = require("./errors");
-const { mapAadhaar } = require("./aadhaar");
+const { mapAadhaar, lockedPaths } = require("./aadhaar");
+const { filePath } = require("../documents/upload");
 const health = require("./health");
 const { FRONTEND_URL, ORG_CODE } = require("../config/membership");
 
@@ -12,18 +14,48 @@ const { FRONTEND_URL, ORG_CODE } = require("../config/membership");
 //   complete() -> asks Cashfree for the Aadhaar details and returns them to fill the form
 // Whatever goes wrong, the student is told why and fills the form by hand instead.
 
-// Fields the student cannot change after DigiLocker filled them (when DigiLocker gave a value).
-const LOCKED = ["name", "dob", "gender", "fatherName"];
+const hasPhoto = (a) => !!(a.photo && a.photo.data && a.photo.data.length);
 
+// What the join page gets: the details to fill in, which fields to lock, and the Aadhaar
+// photo as a data: URL to show in place of the photograph upload.
 function publicResult(v) {
   const a = v.aadhaar || {};
   return {
     verified: true,
     verificationId: v.verificationId,
     last4: a.last4 || "",
-    prefill: { name: a.name, dob: a.dob, gender: a.gender, fatherName: a.fatherName, address: a.address },
-    locked: LOCKED.filter((k) => a[k]),
+    prefill: { name: a.name, dob: a.dob, gender: a.gender, fatherName: a.fatherName, address: a.address, mobile: a.mobile || "" },
+    photo: hasPhoto(a) ? `data:${a.photo.mimeType};base64,${Buffer.from(a.photo.data).toString("base64")}` : "",
+    locked: lockedPaths(a),
   };
+}
+
+// On submission: the fields that came from Aadhaar always take the verified values,
+// never what the browser sent.
+function applyVerified(input, v) {
+  const a = v.aadhaar || {};
+  for (const k of ["name", "dob", "gender", "fatherName"]) if (a[k]) input[k] = a[k];
+  const ad = a.address || {};
+  input.address = { ...(input.address || {}) };
+  if (ad.line1) {
+    input.address.line1 = ad.line1;
+    input.address.line2 = ad.line2 || "";
+  }
+  for (const k of ["city", "state", "pincode"]) if (ad[k]) input.address[k] = ad[k];
+  if (!input.whatsapp && a.mobile) input.whatsapp = a.mobile;
+}
+
+// The Aadhaar photo written to the uploads folder, shaped like an uploaded file so it is
+// saved as the application's photograph. null when DigiLocker gave no photo.
+async function photoFile(v) {
+  const a = v.aadhaar || {};
+  if (!hasPhoto(a)) return null;
+  const data = Buffer.from(a.photo.data);
+  const ext = a.photo.mimeType === "image/png" ? ".png" : ".jpg";
+  const filename = crypto.randomBytes(16).toString("hex") + ext;
+  const fullPath = filePath(filename);
+  await fs.promises.writeFile(fullPath, data);
+  return { fieldname: "photo", filename, originalname: `aadhaar-photo${ext}`, mimetype: a.photo.mimeType, size: data.length, path: fullPath };
 }
 
 async function start(email, membershipType) {
@@ -62,7 +94,7 @@ async function complete(email, verificationId) {
   try {
     if (!provider || provider.name !== record.provider) throw new DigilockerError("UNAVAILABLE", "Provider changed or switched off");
     const doc = await provider.fetchAadhaar(record.verificationId);
-    const mapped = mapAadhaar(doc);
+    const mapped = await mapAadhaar(doc);
     if (!mapped.name) throw new DigilockerError("UNAVAILABLE", "Aadhaar document had no name");
     record.status = "VERIFIED";
     record.verifiedAt = new Date();
@@ -99,4 +131,4 @@ async function latestVerified(email) {
   return v ? publicResult(v) : null;
 }
 
-module.exports = { start, complete, findVerified, latestVerified, LOCKED };
+module.exports = { start, complete, findVerified, latestVerified, applyVerified, photoFile };

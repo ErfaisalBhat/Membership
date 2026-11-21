@@ -82,15 +82,19 @@ export default function JoinPage() {
   function applyDigilocker(result) {
     const p = result.prefill || {};
     const filled = (obj) => Object.fromEntries(Object.entries(obj || {}).filter(([, v]) => v));
+    // Everything Aadhaar has replaces what was typed (those fields are locked); what Aadhaar
+    // doesn't have stays as the student typed it.
+    const address = filled(p.address);
+    if (p.address?.line1) address.line2 = p.address.line2 || "";
     setForm((f) => ({
       ...f,
       ...filled({ name: p.name, dob: p.dob, gender: p.gender, fatherName: p.fatherName }),
-      // Keep an address the student already corrected (restored from their draft).
-      address: f.address?.line1 ? f.address : { ...f.address, ...filled(p.address) },
+      whatsapp: f.whatsapp || p.mobile || "", // Aadhaar mobile suggested; they can change it
+      address: { ...f.address, ...address },
       membershipType: "STUDENT",
       affiliated: "Yes",
     }));
-    const d = { verificationId: result.verificationId, last4: result.last4, locked: result.locked || [], prefill: p };
+    const d = { verificationId: result.verificationId, last4: result.last4, locked: result.locked || [], prefill: p, photo: result.photo || "" };
     setDigi(d);
     setSavedDigi(d);
     setPlan("STUDENT");
@@ -547,8 +551,8 @@ export default function JoinPage() {
           </div>
           <h2 className="mt-4 text-lg font-semibold text-slate-900">Fill your details automatically with DigiLocker</h2>
           <p className="mt-2 text-sm text-slate-600">
-            Log in to DigiLocker with your Aadhaar and allow access. Your name, date of birth, gender, father's name and address are filled in from
-            your Aadhaar, and you do not need to upload an ID card. Only the last 4 digits of your Aadhaar number are kept.
+            Log in to DigiLocker with your Aadhaar and allow access. Your name, date of birth, gender, father's name, address and photograph are
+            taken from your Aadhaar, and you do not need to upload an ID card. Only the last 4 digits of your Aadhaar number are kept.
           </p>
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <button type="button" className={buttonClass.primary} disabled={busy} onClick={startDigilocker}>
@@ -575,8 +579,8 @@ export default function JoinPage() {
 
           {digi && (
             <Alert kind="success" title="Details filled from your Aadhaar">
-              Verified through DigiLocker (Aadhaar ending {digi.last4 || "····"}). Name, date of birth, gender and father's name cannot be changed. Please
-              check your address and change it if you now live somewhere else.
+              Verified through DigiLocker (Aadhaar ending {digi.last4 || "····"}). The details taken from your Aadhaar cannot be changed. Please fill in
+              anything your Aadhaar does not include.
             </Alert>
           )}
           {!digi && digiNotice && (
@@ -600,6 +604,7 @@ export default function JoinPage() {
             lockedEmail={email}
             locked={digi?.locked || []}
             aadhaarVerified={!!digi}
+            aadhaarPhoto={digi?.photo || ""}
             documentsNote="Your documents are stored privately and are only seen by the membership office. If you reload this page, choose the files again."
           />
 

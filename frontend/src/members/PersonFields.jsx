@@ -25,10 +25,15 @@ export default function PersonFields({
   lockedEmail = "", // join form: the verified email, shown read-only
   locked = [], // join form: fields filled from Aadhaar (DigiLocker), shown read-only
   aadhaarVerified = false, // join form: identity verified through DigiLocker, no ID proof upload
+  aadhaarPhoto = "", // join form: the photo from Aadhaar (data: URL), used as the photograph
   documentsNote = "Documents are stored privately and are only visible to the membership office.",
 }) {
   const isLocked = (path) => locked.includes(path);
   const lockedHint = "From your Aadhaar (DigiLocker).";
+  // Joined through DigiLocker (join form, or the admin editing such a member): no ID proof
+  // upload, and the Aadhaar address may have lines longer than the usual 30 characters.
+  const viaAadhaar = aadhaarVerified || !!form.aadhaarVerified;
+  const lineMax = viaAadhaar ? 100 : 30;
   const type = form.membershipType;
   const isStudent = type === "STUDENT";
   const isInstitution = type === "INSTITUTIONAL";
@@ -79,6 +84,13 @@ export default function PersonFields({
     const doc = DOCS[key];
     const existing = existingDocs[key];
     const errKey = `documents.${key}`;
+    if (key === "photo" && aadhaarPhoto && isLocked(errKey)) {
+      return (
+        <Field key={key} label={doc.label} htmlFor={errKey} hint="From your Aadhaar (DigiLocker). Printed on the ID card.">
+          <img id={errKey} src={aadhaarPhoto} alt="Photograph from Aadhaar" className="h-36 w-28 rounded-md border border-slate-300 object-cover" />
+        </Field>
+      );
+    }
     return (
       <Field
         key={key}
@@ -131,8 +143,8 @@ export default function PersonFields({
       </Section>
 
       <Section title="Current address">
-        {text("address.line1", "Address line 1", { maxLength: 30, className: "sm:col-span-2" })}
-        {text("address.line2", "Address line 2", { maxLength: 30, required: false, className: "sm:col-span-2" })}
+        {text("address.line1", "Address line 1", { maxLength: lineMax, className: "sm:col-span-2" })}
+        {text("address.line2", "Address line 2", { maxLength: lineMax, required: false, className: "sm:col-span-2" })}
         {text("address.city", "City")}
         {select("address.state", "State", INDIAN_STATES)}
         {text("address.pincode", "PIN code", { inputMode: "numeric", maxLength: 6 })}
@@ -165,7 +177,7 @@ export default function PersonFields({
       <Section title="Document uploads" description={documentsNote}>
         {fileField("photo")}
         {fileField("signature")}
-        {aadhaarVerified ? (
+        {viaAadhaar ? (
           <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800 sm:col-span-2">
             ID proof: your Aadhaar has been verified through DigiLocker, so you do not need to upload an ID card.
           </p>
@@ -176,7 +188,7 @@ export default function PersonFields({
           </>
         )}
         {isStudent && fileField("studentId")}
-        {!aadhaarVerified && form.idProofType === "Aadhaar" && (
+        {!viaAadhaar && form.idProofType === "Aadhaar" && (
           <p className="text-xs text-amber-700 sm:col-span-2">
             For Aadhaar, please upload a masked copy (only the last 4 digits visible), as UIDAI recommends.
           </p>

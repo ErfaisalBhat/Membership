@@ -1,5 +1,6 @@
 const { MEMBERSHIP_TYPES, GENDERS, ID_PROOF_TYPES, PAYMENT_MODES } = require("../config/membership");
 const { parseDateOnly, todayIST, ageOn } = require("../shared/dates");
+const { AADHAAR_LINE_MAX } = require("../digilocker/aadhaar");
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PINCODE_RE = /^[1-9]\d{5}$/;
@@ -53,7 +54,10 @@ function validateWhatsapp(input, errors, data) {
   if (!/^[6-9]\d{9}$/.test(data.whatsapp)) errors.whatsapp = "Enter a valid 10-digit Indian mobile number.";
 }
 
-function validateAddress(input, errors, data) {
+// Address lines are 30 characters, but an address taken from Aadhaar (DigiLocker) is kept
+// whole, so verified people may have lines up to AADHAAR_LINE_MAX.
+function validateAddress(input, errors, data, { aadhaarVerified = false } = {}) {
+  const lineMax = aadhaarVerified ? AADHAAR_LINE_MAX : 30;
   const a = input.address || {};
   data.address = {
     line1: s(a.line1),
@@ -62,8 +66,8 @@ function validateAddress(input, errors, data) {
     state: s(a.state),
     pincode: s(a.pincode),
   };
-  required(errors, "address.line1", data.address.line1, "Address line 1 is required.", 30);
-  if (data.address.line2.length > 30) errors["address.line2"] = "Must be at most 30 characters.";
+  required(errors, "address.line1", data.address.line1, "Address line 1 is required.", lineMax);
+  if (data.address.line2.length > lineMax) errors["address.line2"] = `Must be at most ${lineMax} characters.`;
   required(errors, "address.city", data.address.city, "City is required.", 60);
   required(errors, "address.state", data.address.state, "Select state.", 60);
   if (!PINCODE_RE.test(data.address.pincode)) errors["address.pincode"] = "Enter a valid 6-digit PIN code.";
@@ -110,6 +114,9 @@ function validateMember(input, { files = {}, existing = null, mode = "admin", aa
   const errors = {};
   const data = {};
   const isNew = !existing;
+  // Also when the admin edits someone who joined through DigiLocker: they have no ID proof
+  // upload and may have a long Aadhaar address.
+  aadhaarVerified = aadhaarVerified || !!(existing && existing.aadhaar && existing.aadhaar.verified);
 
   const type = isNew ? s(input.membershipType) : existing.membershipType;
   if (!MEMBERSHIP_TYPES[type]) errors.membershipType = "Select a membership type.";
@@ -143,7 +150,7 @@ function validateMember(input, { files = {}, existing = null, mode = "admin", aa
     else if (ageOn(data.dob, todayIST()) < MIN_AGE) errors.dob = `Member must be at least ${MIN_AGE} years old.`;
   }
 
-  validateAddress(input, errors, data);
+  validateAddress(input, errors, data, { aadhaarVerified });
   validateAffiliation(input, type, errors, data);
 
   // Documents
@@ -186,7 +193,7 @@ function validateSelfUpdate(input, member) {
   const errors = {};
   const data = {};
   validateWhatsapp(input, errors, data);
-  validateAddress(input, errors, data);
+  validateAddress(input, errors, data, { aadhaarVerified: !!(member.aadhaar && member.aadhaar.verified) });
   validateAffiliation(input, member.membershipType, errors, data);
   data.showInPublicList = yes(input.showInPublicList);
   return { data, errors };

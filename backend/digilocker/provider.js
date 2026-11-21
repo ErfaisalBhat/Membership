@@ -8,7 +8,8 @@
 //   name
 //   problem()                                   null when ready, otherwise what is missing
 //   createUrl({ verificationId, redirectUrl, purpose, companyName })  -> { url } to send the student to
-//   fetchAadhaar(verificationId)                -> Cashfree's Aadhaar document, or throws DigilockerError
+//   fetchAadhaar(verificationId)                -> Cashfree's Aadhaar document (+ user_details), or throws DigilockerError
+//   ping()                                      -> true when the service can be used right now
 
 const providers = {
   cashfree: require("./providers/cashfree"),
