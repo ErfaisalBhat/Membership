@@ -178,11 +178,6 @@ export default function PersonFields({
             {fileField("idProof")}
           </>
         )}
-        {!viaAadhaar && form.idProofType === "Aadhaar" && (
-          <p className="text-xs text-amber-700 sm:col-span-2">
-            For Aadhaar, please upload a masked copy (only the last 4 digits visible), as UIDAI recommends.
-          </p>
-        )}
       </Section>
     </>
   );

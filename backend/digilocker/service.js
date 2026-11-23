@@ -3,7 +3,7 @@ const fs = require("fs");
 const DigilockerVerification = require("./DigilockerVerification");
 const { digilockerProvider, digilockerProblem } = require("./provider");
 const { DigilockerError, MESSAGES } = require("./errors");
-const { mapAadhaar, lockedPaths } = require("./aadhaar");
+const { mapAadhaar, lockedPaths, cleanStored } = require("./aadhaar");
 const { filePath } = require("../documents/upload");
 const health = require("./health");
 const { FRONTEND_URL, ORG_CODE } = require("../config/membership");
@@ -19,7 +19,7 @@ const hasPhoto = (a) => !!(a.photo && a.photo.data && a.photo.data.length);
 // What the join page gets: the details to fill in, which fields to lock, and the Aadhaar
 // photo as a data: URL to show in place of the photograph upload.
 function publicResult(v) {
-  const a = v.aadhaar || {};
+  const a = cleanStored(v.aadhaar ? (v.aadhaar.toObject ? v.aadhaar.toObject() : v.aadhaar) : {});
   return {
     verified: true,
     verificationId: v.verificationId,
@@ -33,7 +33,7 @@ function publicResult(v) {
 // On submission: the fields that came from Aadhaar always take the verified values,
 // never what the browser sent.
 function applyVerified(input, v) {
-  const a = v.aadhaar || {};
+  const a = cleanStored(v.aadhaar ? (v.aadhaar.toObject ? v.aadhaar.toObject() : v.aadhaar) : {});
   for (const k of ["name", "dob", "gender", "fatherName"]) if (a[k]) input[k] = a[k];
   const ad = a.address || {};
   input.address = { ...(input.address || {}) };

@@ -145,6 +145,27 @@ async function mapAadhaar(doc) {
   };
 }
 
+// A saved verification, cleaned again when it is used: placeholders such as "-" (saved by
+// older versions, or left by Aadhaar) count as empty, so they are never filled in or locked.
+function cleanStored(a = {}) {
+  const ad = a.address || {};
+  let line1 = addressPart(ad.line1);
+  let line2 = addressPart(ad.line2);
+  if (!line1 && line2) [line1, line2] = [line2, ""];
+  return {
+    ...a,
+    name: clean(a.name),
+    fatherName: clean(a.fatherName),
+    address: {
+      line1,
+      line2,
+      city: addressPart(ad.city),
+      state: matchState(ad.state),
+      pincode: /^[1-9]\d{5}$/.test(clean(ad.pincode)) ? clean(ad.pincode) : "",
+    },
+  };
+}
+
 // Form fields that came from Aadhaar and so are shown read-only (only those with a value;
 // anything Aadhaar doesn't have is left for the applicant to fill in).
 function lockedPaths(a = {}) {
@@ -156,4 +177,4 @@ function lockedPaths(a = {}) {
   return paths;
 }
 
-module.exports = { mapAadhaar, lockedPaths, matchState, splitLines, fatherFromCareOf, AADHAAR_LINE_MAX };
+module.exports = { mapAadhaar, lockedPaths, cleanStored, matchState, splitLines, fatherFromCareOf, AADHAAR_LINE_MAX };
