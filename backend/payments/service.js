@@ -7,7 +7,13 @@ const { nextMembershipId, nextReceiptNo, nextOrderNo } = require("../members/mem
 const { computeExpiry, todayIST } = require("../shared/dates");
 const { renewalPeriod } = require("../members/renewal");
 const { activeProvider, paymentsProblem, providerByName } = require("./provider");
-const { sendCardEmail, sendPaymentIncompleteEmail, trySend } = require("../mail/mailer");
+const {
+  sendCardEmail,
+  sendPaymentIncompleteEmail,
+  sendApplicationReceivedEmail,
+  sendNewApplicationAdminEmail,
+  trySend,
+} = require("../mail/mailer");
 
 class PaymentError extends Error {
   constructor(message, status = 400) {
@@ -123,7 +129,7 @@ async function activateOrder(orderId, { paymentId = "", method = "" } = {}) {
     };
 
     if (order.purpose === "NEW" && !order.applicationId) {
-      // Pay-first flow: the money is held until the applicant fills in their details and
+      // Paid before any details were filled (an earlier version of the join page): the money is held until the applicant fills in their details and
       // the admin approves; the member (and receipt) is created on approval.
       if (await Member.exists({ email: order.email })) {
         order.failureReason = "Paid, but a member with this email already exists. Check the member and refund if needed.";
@@ -142,15 +148,35 @@ async function activateOrder(orderId, { paymentId = "", method = "" } = {}) {
 
     if (order.purpose === "NEW") {
       const application = await Application.findById(order.applicationId);
-      if (!application || application.status === "PAID") {
+      const paidByOther = application && application.paymentOrderId && !application.paymentOrderId.equals(order._id);
+      if (!application || application.status === "PAID" || paidByOther) {
         order.failureReason = "Paid twice: this application was already paid by another order. Refund this payment.";
         await order.save();
         console.error(`[PAYMENT] ${order.orderNo}: duplicate payment for application ${order.applicationId}`);
         return order;
       }
+      if (application.status === "UNPAID") {
+        // Details filled, now paid: the application goes to the admin for review. The member
+        // (and receipt) is created when the admin approves it.
+        if (await Member.exists({ email: application.email })) {
+          order.failureReason = "Paid, but a member with this email already exists. Check the member and refund if needed.";
+          await order.save();
+          console.error(`[PAYMENT] ${order.orderNo}: member with email already exists`);
+          return order;
+        }
+        application.status = "PENDING";
+        application.paymentOrderId = order._id;
+        await application.save();
+        order.name = application.name;
+        await order.save();
+        await trySend(() => sendApplicationReceivedEmail(application, { paid: true }));
+        await trySend(() => sendNewApplicationAdminEmail(application));
+        return order;
+      }
       if (application.status !== "APPROVED") {
-        // e.g. the admin rejected or the applicant withdrew it while the payment was in progress.
-        order.failureReason = `Paid, but the application is ${application.status.toLowerCase()}, not approved. Review it and refund if needed.`;
+        // e.g. the admin cancelled or the applicant withdrew it while the payment was in progress.
+        // The payment stays unused, so a new application from this email re-uses it.
+        order.failureReason = `Paid, but the application is ${application.status.toLowerCase()}. Refund this payment, unless the applicant submits a new application.`;
         await order.save();
         console.error(`[PAYMENT] ${order.orderNo}: application ${application._id} is ${application.status}`);
         return order;

@@ -11,22 +11,22 @@ import CodeForm from "../ui/CodeForm";
 import Icon from "../ui/icons";
 import { Alert, Card, Details, Spinner, buttonClass } from "../ui/form";
 
-// Joining, in the order of the process flow (pay first):
-//   plan -> verify email (duplicate check + OTP) -> pay -> details -> admin review
+// Joining, in the order of the process flow:
+//   plan -> verify email (duplicate check + OTP) -> details -> pay -> admin review
 // Once approved, the member is registered and the ID card emailed. Verifying the same
-// email later continues where they left off: paid -> details, submitted -> status.
-// (Applications approved under the older flow still pay on the "pay" step.)
+// email later continues where they left off: details saved -> pay, paid -> status.
+// (Applications approved under the older flow also pay on the "pay" step.)
 
 const STEPS = [
   ["plan", "Plan"],
   ["email", "Verify email"],
-  ["pay", "Payment"],
   ["details", "Your details"],
+  ["pay", "Payment"],
   ["review", "Review"],
 ];
 
 // Which step shows a saved application.
-const stepFor = (application) => (application.status === "APPROVED" ? "pay" : "review");
+const stepFor = (application) => (["UNPAID", "APPROVED"].includes(application.status) ? "pay" : "review");
 
 function Stepper({ step }) {
   const current = STEPS.findIndex(([k]) => k === step);
@@ -179,7 +179,7 @@ export default function JoinPage() {
           setApplication(res.application);
           setMember(res.member);
           setStep("done");
-        } else if (["PENDING", "APPROVED"].includes(res.application?.status)) {
+        } else if (["UNPAID", "PENDING", "APPROVED"].includes(res.application?.status)) {
           setApplication(res.application);
           setEmail(res.application.email);
           setStep(stepFor(res.application));
@@ -270,8 +270,9 @@ export default function JoinPage() {
     setBanner("");
     setPaidOrder(res.paidOrder || null);
     if (res.digilocker) setSavedDigi(res.digilocker);
+    if (params.get("dl")) return completeDigilocker(params.get("dl"));
     if (res.application && res.application.status !== "REJECTED") {
-      // Submitted and under review (or, older flow, approved and waiting for payment).
+      // Details saved and waiting for payment, or paid and under review.
       setApplication(res.application);
       setStep(stepFor(res.application));
     } else if (res.application) {
@@ -279,20 +280,20 @@ export default function JoinPage() {
       setApplication(res.application);
       setStep("review");
     } else if (res.paidOrder) {
-      // Paid already: straight to the details for the plan that was paid for.
-      if (params.get("dl")) return completeDigilocker(params.get("dl"));
+      // A payment not used yet: fill in the details for the plan that was paid for.
       restoreDraft(res.email, { withPlan: false });
-      startDetails(res.paidOrder, res.digilocker);
+      startDetails(res.paidOrder.membershipType, res.digilocker);
+    } else if (plan) {
+      restoreDraft(res.email, { withPlan: false });
+      startDetails(plan, res.digilocker);
     } else {
-      // Not paid yet: pay for the chosen plan.
       setApplication(null);
-      setStep(plan ? "pay" : "plan");
+      setStep("plan");
     }
   }
 
-  // Opens the details form for the plan that was paid for (Aadhaar auto-fill re-used if verified).
-  function startDetails(order, verified = savedDigi) {
-    const type = order.membershipType;
+  // Opens the details form for a plan (Aadhaar auto-fill re-used if verified).
+  function startDetails(type, verified = savedDigi) {
     setApplication(null);
     setPlan(type);
     if (verified && config?.digilocker?.types?.includes(type)) {
@@ -306,9 +307,10 @@ export default function JoinPage() {
 
   // After a rejection or withdrawal: fill the form again (no new payment if one is unused).
   function newApplication() {
-    if (paidOrder) return startDetails(paidOrder);
+    if (paidOrder) return startDetails(paidOrder.membershipType);
+    if (plan) return startDetails(plan);
     setApplication(null);
-    setStep(plan ? "pay" : "plan");
+    setStep("plan");
   }
 
   // ---------- details ----------
@@ -345,14 +347,12 @@ export default function JoinPage() {
       setApplication(res.application);
       setErrors({});
       clearDraft();
-      setStep("review");
+      setPayMessage(null);
+      // Not paid yet -> payment; an unused earlier payment was re-used -> under review.
+      setStep(stepFor(res.application));
     } catch (err) {
       if (err instanceof ApiError && Object.keys(err.errors).length) setErrors(err.errors);
       if (err.code === "MEMBER_EXISTS") setExisting(true);
-      if (err.code === "PAYMENT_REQUIRED") {
-        setPaidOrder(null);
-        setStep("pay");
-      }
       if (err.code === "DIGILOCKER_EXPIRED") {
         setDigi(null);
         setSavedDigi(null);
@@ -379,23 +379,20 @@ export default function JoinPage() {
   }
 
   // ---------- payment ----------
-  // Pay first for the chosen plan; older approved applications pay for the application.
+  // Pay for the submitted application.
   async function pay() {
     setBanner("");
     setPayMessage(null);
     setBusy(true);
     try {
-      const res =
-        application?.status === "APPROVED"
-          ? await api("/join/application/checkout", { method: "POST", auth: "join" })
-          : await api("/join/checkout", { method: "POST", json: { membershipType: plan }, auth: "join" });
+      const res = await api("/join/application/checkout", { method: "POST", auth: "join" });
       setCheckout(res.checkout);
     } catch (err) {
       if (err.code === "ALREADY_PAID") {
         const res = await api("/join/application", { auth: "join" }).catch(() => null);
-        if (res?.paidOrder) {
-          setPaidOrder(res.paidOrder);
-          startDetails(res.paidOrder, res.digilocker || savedDigi);
+        if (res?.application) {
+          setApplication(res.application);
+          setStep(stepFor(res.application));
           return;
         }
       }
@@ -421,10 +418,11 @@ export default function JoinPage() {
           setApplication(res.application);
           setMember(res.member);
           setStep("done");
-        } else if (res.order.status === "PAID" && res.paidOrder) {
-          // Pay-first flow: now fill in the details.
-          setPaidOrder(res.paidOrder);
-          startDetails(res.paidOrder);
+        } else if (res.order.status === "PAID" && res.application?.status === "PENDING") {
+          // Paid: the application now goes to the membership office for review.
+          setApplication(res.application);
+          setPaidOrder(null);
+          setStep("review");
         } else if (res.order.status === "PAID") {
           setPayMessage({ kind: "warning", text: "Your payment was received, but there is a problem with it. The membership office will contact you. Please do not pay again." });
         } else if (res.order.status === "FAILED") {
@@ -432,7 +430,7 @@ export default function JoinPage() {
         } else {
           setPayMessage({
             kind: "warning",
-            text: "We are waiting for the payment gateway to confirm your payment. Please do not pay again. Come back to this page and verify your email in a few minutes to fill in your details.",
+            text: "We are waiting for the payment gateway to confirm your payment. Please do not pay again. Come back to this page and verify your email in a few minutes to see the status of your application.",
           });
         }
       } catch (err) {
@@ -491,9 +489,14 @@ export default function JoinPage() {
           <PlanCards config={config} selected={plan} onSelect={choosePlan} />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <button type="button" className={buttonClass.ghost} onClick={() => setStep("email")}>
-              Already paid or applied? Continue here
+              Already applied? Continue here
             </button>
-            <button type="button" className={buttonClass.primary} disabled={!chosen} onClick={() => setStep("email")}>
+            <button
+              type="button"
+              className={buttonClass.primary}
+              disabled={!chosen}
+              onClick={() => (email && joinTokenStore.get() ? startDetails(plan) : setStep("email"))}
+            >
               Continue <Icon name="arrowRight" className="h-4 w-4" />
             </button>
           </div>
@@ -592,7 +595,7 @@ export default function JoinPage() {
           )}
           <p className="mt-4 text-sm text-slate-600">
             {paidOrder
-              ? `Your payment of ${formatMoney(paidOrder.amount)} is kept. Submit a new application with the correct information without paying again, or contact the membership office for a refund.`
+              ? `Your payment of ${formatMoney(paidOrder.amount)} is kept. Submit a new application with the correct information without paying again.`
               : "You are welcome to submit a new application with the correct information."}
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
@@ -634,10 +637,14 @@ export default function JoinPage() {
             <span>
               Applying for <strong className="text-slate-900">{chosen?.label}</strong> · {formatMoney(paidOrder?.amount ?? chosen?.fee)}
             </span>
-            {paidOrder && (
+            {paidOrder ? (
               <span className="inline-flex items-center gap-1.5 text-sm font-medium text-green-700">
                 <Icon name="check" className="h-4 w-4" /> Paid
               </span>
+            ) : (
+              <button type="button" className={buttonClass.ghost} onClick={() => setStep("plan")}>
+                Change plan
+              </button>
             )}
           </div>
 
@@ -705,71 +712,26 @@ export default function JoinPage() {
 
           <div className="flex justify-end">
             <button type="submit" className={buttonClass.primary} disabled={busy}>
-              {busy ? "Submitting…" : "Submit application for review"}
+              {busy ? "Saving…" : paidOrder ? "Submit application for review" : "Save and continue to payment"}
             </button>
           </div>
         </form>
-      )}
-
-      {step === "pay" && !application && (
-        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-          <Card title="Your plan">
-            {chosen ? (
-              <>
-                <Details
-                  rows={[
-                    ["Membership type", chosen.label],
-                    ["Email (verified)", email],
-                    ["Validity", chosen.validityMonths ? `${chosen.validityMonths} months from the date of approval` : "Lifetime"],
-                  ]}
-                />
-                <div className="mt-4">
-                  <button type="button" className={buttonClass.ghost} onClick={() => setStep("plan")}>
-                    Change plan
-                  </button>
-                </div>
-              </>
-            ) : (
-              <p className="text-sm text-slate-600">Choose a plan first.</p>
-            )}
-            <p className="mt-5 border-t border-slate-100 pt-4 text-xs text-slate-500">
-              After paying, you fill in your details and upload your documents. The membership office then reviews your application; once it is
-              approved, your membership number, ID card and receipt are emailed to you. If it is not approved, your payment is refunded.
-            </p>
-          </Card>
-
-          <Card title="Payment">
-            <div className="space-y-4">
-              <div className="flex items-baseline justify-between">
-                <span className="text-sm text-slate-600">Amount</span>
-                <span className="text-2xl font-semibold tabular-nums text-slate-900">{formatMoney(chosen?.fee)}</span>
-              </div>
-              {payMessage && <Alert kind={payMessage.kind}>{payMessage.text}</Alert>}
-              {!config.onlinePayments.enabled ? (
-                <Alert kind="warning" title="Online payment is not available yet">
-                  Please contact the membership office{config.contact.email ? ` at ${config.contact.email}` : ""} to complete the payment.
-                </Alert>
-              ) : checkout ? (
-                <Checkout checkout={checkout} onResult={onResult} onCancel={onCancel} />
-              ) : (
-                <button type="button" className={`${buttonClass.primary} w-full`} disabled={busy || !chosen} onClick={pay}>
-                  {busy ? "Please wait…" : `Pay ${formatMoney(chosen?.fee)}`}
-                </button>
-              )}
-              <p className="text-xs text-slate-500">UPI, cards and net banking are accepted.</p>
-            </div>
-          </Card>
-        </div>
       )}
 
       {step === "pay" && application && (
         <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
           <Card title="Your application">
             <div className="mb-5">
-              <Alert kind="success" title="Your application has been approved">
-                {application.reviewedAt ? `Approved on ${formatDate(application.reviewedAt)}. ` : ""}Pay the membership fee to complete your
-                membership.
-              </Alert>
+              {application.status === "APPROVED" ? (
+                <Alert kind="success" title="Your application has been approved">
+                  {application.reviewedAt ? `Approved on ${formatDate(application.reviewedAt)}. ` : ""}Pay the membership fee to complete your
+                  membership.
+                </Alert>
+              ) : (
+                <Alert kind="info" title="Your details are saved">
+                  Pay the membership fee to send your application to the membership office for review.
+                </Alert>
+              )}
             </div>
             <Details
               rows={[
@@ -777,12 +739,26 @@ export default function JoinPage() {
                 ["Email", application.email],
                 ["WhatsApp", application.whatsapp],
                 ["Membership type", application.typeLabel],
-                ["Validity", appType?.validityMonths ? `${appType.validityMonths} months from the date of payment` : "Lifetime"],
+                [
+                  "Validity",
+                  appType?.validityMonths
+                    ? `${appType.validityMonths} months from the date of ${application.status === "APPROVED" ? "payment" : "approval"}`
+                    : "Lifetime",
+                ],
               ]}
             />
+            {application.status === "UNPAID" && (
+              <div className="mt-4">
+                <button type="button" className={buttonClass.ghost} disabled={busy || !!checkout} onClick={startOver}>
+                  Change details
+                </button>
+              </div>
+            )}
             <p className="mt-5 border-t border-slate-100 pt-4 text-xs text-slate-500">
-              Please pay within {config.pendingApplicationDays} days of approval. If you leave now, come back to this page and verify the same email to
-              continue.
+              {application.status === "UNPAID"
+                ? "After payment, the membership office reviews your application. Once it is approved, your membership number, ID card and receipt are emailed to you. "
+                : `Please pay within ${config.pendingApplicationDays} days of approval. `}
+              If you leave now, come back to this page and verify the same email to continue.
             </p>
           </Card>
 
@@ -804,7 +780,10 @@ export default function JoinPage() {
                   {busy ? "Please wait…" : `Pay ${formatMoney(application.amount)}`}
                 </button>
               )}
-              <p className="text-xs text-slate-500">UPI, cards and net banking are accepted. Your membership number and ID card are issued as soon as the payment is confirmed.</p>
+              <p className="text-xs text-slate-500">
+                UPI, cards and net banking are accepted.
+                {application.status === "APPROVED" ? " Your membership number and ID card are issued as soon as the payment is confirmed." : ""}
+              </p>
             </div>
           </Card>
         </div>

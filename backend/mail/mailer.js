@@ -340,7 +340,7 @@ function applicationRows(application) {
 }
 
 // To the applicant, right after they submit the form.
-// paid: the fee was paid online before the form (pay-first flow).
+// paid: the membership fee has been paid online (sent once the payment is confirmed).
 async function sendApplicationReceivedEmail(application, { paid = false } = {}) {
   return send({
     to: application.email,
@@ -352,7 +352,7 @@ async function sendApplicationReceivedEmail(application, { paid = false } = {}) 
       table(applicationRows(application)),
       p(
         paid
-          ? "Your application will now be reviewed by the Membership Section. Once it is approved, your membership number, ID card and payment receipt will be emailed to you. If it is not approved, we will contact you about a refund."
+          ? "Your application will now be reviewed by the Membership Section. Once it is approved, your membership number, ID card and payment receipt will be emailed to you."
           : "Your application will now be reviewed by the Membership Section. You do not need to pay anything yet. We will email you once it has been reviewed; if it is approved, the email will have a link to pay the membership fee online."
       ),
       contactLine(),
@@ -396,7 +396,7 @@ async function sendApplicationApprovedEmail(application) {
 }
 
 // To the applicant: not approved, with the reason given by the admin.
-// paid: the applicant paid online before applying; their payment is refunded unless they reapply.
+// paid: the applicant had paid online; the payment is kept for a new application.
 async function sendApplicationRejectedEmail(application, reason, { paid = false } = {}) {
   return send({
     to: application.email,
@@ -408,12 +408,12 @@ async function sendApplicationRejectedEmail(application, reason, { paid = false 
       ...(reason ? [table([["Reason", reason]])] : []),
       p(
         paid
-          ? "Your uploaded documents have been deleted from our records. Your membership fee payment is kept for now."
+          ? "Your uploaded documents have been deleted from our records. Your membership fee payment is kept."
           : "No payment has been taken. Your uploaded documents have been deleted from our records."
       ),
       p(
         paid
-          ? `If you can provide the correct information, open ${FRONTEND_URL}/join, verify your email address and submit a new application. You will not need to pay again. Otherwise, please contact us and we will refund your payment.`
+          ? `If you can provide the correct information, open ${FRONTEND_URL}/join, verify your email address and submit a new application. You will not need to pay again.`
           : "If you believe this is a mistake, or you can provide the missing information, you are welcome to submit a new application."
       ),
       contactLine(),

@@ -49,14 +49,19 @@ async function runExpiryJob() {
     { $set: { status: "FAILED", failureReason: "Abandoned: no payment was received." } }
   );
 
-  // Only approved-but-unpaid applications expire; ones waiting for review stay until the admin acts.
+  // Only unpaid applications expire (details filled but never paid, or approved under the older
+  // flow but never paid); paid ones waiting for review stay until the admin acts.
+  const cutoff = new Date(Date.now() - PENDING_APPLICATION_DAYS * 24 * 3600 * 1000);
   const stale = await Application.find({
-    status: "APPROVED",
-    reviewedAt: { $lt: new Date(Date.now() - PENDING_APPLICATION_DAYS * 24 * 3600 * 1000) },
+    $or: [
+      { status: "UNPAID", updatedAt: { $lt: cutoff } },
+      { status: "APPROVED", reviewedAt: { $lt: cutoff } },
+    ],
   });
   for (const application of stale) {
+    const wasApproved = application.status === "APPROVED";
     application.status = "CANCELLED";
-    application.cancelReason = `Not paid within ${PENDING_APPLICATION_DAYS} days of approval.`;
+    application.cancelReason = `Not paid within ${PENDING_APPLICATION_DAYS} days of ${wasApproved ? "approval" : "filling in the details"}.`;
     await application.save();
     const docs = application.documents ? application.documents.toObject() : {};
     await removeStoredFiles(Object.values(docs).map((f) => f && f.filename));

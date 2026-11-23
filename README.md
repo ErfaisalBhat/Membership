@@ -76,11 +76,14 @@ console. `EMAIL_MODE=file` also saves every email and its PDFs in `backend/email
    through DigiLocker (`DIGILOCKER_TYPES` in `backend/config/membership.js`).
 2. Enter email → duplicate check (existing members are sent to member login) → 6-digit code.
 3. Fill the form (same fields as MEMBERSHIP FORM.docx), upload documents, accept the terms.
-   This is saved as a **pending application**.
-4. Pay online. Only when the gateway confirms the payment (to the server, not just the browser)
-   is the member created: membership number, Active status, ID card and receipt emailed.
-5. If the payment fails, the application stays pending for 30 days. Verifying the same email
-   again goes straight to payment — no need to fill the form again. An email with a link is sent.
+   This is saved as an **unpaid application** (not shown for review yet).
+4. Pay online. When the gateway confirms the payment (to the server, not just the browser)
+   the application goes to the admin for review.
+5. The admin approves it: the member is created (membership number, Active status) and the
+   ID card and receipt are emailed. If rejected, the payment is kept and the applicant can
+   submit a new application without paying again.
+6. If the payment fails, verifying the same email again goes straight to payment — no need to
+   fill the form again. Unpaid applications are cancelled after 30 days.
 
 **Member account** (`/account`) — log in with a code sent to the registered email (no password).
 Download ID card and receipts, update WhatsApp/address/affiliation/directory consent, and renew

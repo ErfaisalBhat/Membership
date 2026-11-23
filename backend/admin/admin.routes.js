@@ -66,7 +66,7 @@ router.get("/overview", async (req, res) => {
 
 // GET /api/admin/applications?status=PENDING&search=&page=
 router.get("/applications", async (req, res) => {
-  const status = ["PENDING", "APPROVED", "PAID", "REJECTED", "CANCELLED"].includes(one(req.query.status)) ? one(req.query.status) : "PENDING";
+  const status = ["UNPAID", "PENDING", "APPROVED", "PAID", "REJECTED", "CANCELLED"].includes(one(req.query.status)) ? one(req.query.status) : "PENDING";
   const filter = { status, ...searchFilter(req.query, ["name", "email", "whatsapp"]) };
   const { page, limit, skip } = pagination(req.query);
   const [items, total] = await Promise.all([

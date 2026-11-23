@@ -273,7 +273,13 @@ export default function ApplicationDetailPage() {
       </p>
 
       {a.status === "PENDING" && a.paymentOrderId && (
-        <Alert kind="info">Paid online before applying. Approving registers the member straight away. Rejecting flags the payment for a refund under Payments.</Alert>
+        <Alert kind="info">Paid online. Approving registers the member straight away. Rejecting flags the payment for a refund under Payments.</Alert>
+      )}
+      {a.status === "UNPAID" && (
+        <Alert kind="info">
+          The applicant has filled in the details but has not paid yet. It comes up for review once paid. Unpaid applications are cancelled automatically
+          after {config.pendingApplicationDays} days.
+        </Alert>
       )}
       {a.status === "APPROVED" && (
         <Alert kind="info">
@@ -373,7 +379,7 @@ export default function ApplicationDetailPage() {
           </Card>
         </div>
 
-        {(a.status === "PENDING" || a.status === "APPROVED") && (
+        {["UNPAID", "PENDING", "APPROVED"].includes(a.status) && (
           <div className="space-y-6">
             {a.status === "PENDING" && (
               <Card title="Review">

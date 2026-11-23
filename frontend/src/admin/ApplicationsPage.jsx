@@ -7,19 +7,21 @@ import Pagination from "../ui/Pagination";
 import { Alert, EmptyState, PageHeader, Spinner, inputClass } from "../ui/form";
 
 const TABS = [
-  ["PENDING", "Awaiting review"],
+  ["PENDING", "Paid, awaiting review"],
+  ["UNPAID", "Not paid yet"],
   ["APPROVED", "Approved, awaiting payment"],
-  ["PAID", "Paid"],
+  ["PAID", "Registered"],
   ["REJECTED", "Rejected"],
   ["CANCELLED", "Cancelled"],
 ];
 
 const EMPTY = {
   PENDING: "No applications are waiting for review.",
+  UNPAID: "No applicants are waiting to pay.",
   APPROVED: "No approved applications are waiting for payment.",
 };
 
-// Online sign-ups: reviewed by the admin first, then paid by the applicant.
+// Online sign-ups: the applicant fills in the details and pays, then the admin reviews.
 export default function ApplicationsPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();

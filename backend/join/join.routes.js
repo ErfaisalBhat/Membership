@@ -17,14 +17,16 @@ const digilockerHealth = require("../digilocker/health");
 const { MESSAGES: DIGILOCKER_MESSAGES } = require("../digilocker/errors");
 const { DIGILOCKER_TYPES } = require("../config/membership");
 
-// Public sign-up (pay first):
-//   1. POST /otp       email -> 6-digit code by email (refused if already a member)
-//   2. POST /verify    code  -> join token (header X-Join-Token on the next calls)
-//   3. POST /checkout  { membershipType } -> starts the online payment for the chosen plan
-//   4. POST /orders/:id/confirm          -> browser reports the payment result
-//   5. POST /application  form + documents -> PENDING application (needs the paid order)
+// Public sign-up (details, then payment):
+//   1. POST /otp                  email -> 6-digit code by email (refused if already a member)
+//   2. POST /verify               code  -> join token (header X-Join-Token on the next calls)
+//   3. POST /application          form + documents -> UNPAID application
+//   4. POST /application/checkout -> starts the online payment for that application
+//   5. POST /orders/:id/confirm   -> browser reports the result; once paid the application
+//                                    becomes PENDING and goes to the admin for review
 //   -- the admin approves it: the member is registered and the ID card emailed --
-// Older applications approved before payment still pay via POST /application/checkout.
+// An unused payment (e.g. after a rejection) is re-used: the new application is PENDING at once.
+// Older applications approved before payment also pay via POST /application/checkout.
 // The applicant sees the status of their application by verifying the same email again.
 
 const { OPEN_STATUSES } = Application;
@@ -129,18 +131,6 @@ router.get("/application", requireJoin, async (req, res) => {
   });
 });
 
-// POST /api/join/checkout { membershipType } — pay for the chosen plan, before the details.
-router.post("/checkout", requireJoin, async (req, res) => {
-  const membershipType = String((req.body && req.body.membershipType) || "");
-  if (!MEMBERSHIP_TYPES[membershipType]) return res.status(400).json({ message: "Choose a membership plan first." });  if (await Member.exists({ email: req.joinEmail })) return res.status(409).json(MEMBER_EXISTS);
-  if (await unusedPaidOrder(req.joinEmail)) {
-    return res.status(409).json({ code: "ALREADY_PAID", message: "You have already paid for your membership. Please fill in your details to continue." });
-  }
-  const pending = await Application.exists({ email: req.joinEmail, status: "PENDING" });
-  if (pending) return res.status(409).json({ message: "Your application is already being reviewed. You do not need to pay again." });
-  res.json({ checkout: await startCheckout({ purpose: "NEW", applicant: { name: req.joinEmail, email: req.joinEmail, membershipType } }) });
-});
-
 // POST /api/join/application  (multipart: data=JSON, photo, signature, idProof)
 router.post("/application", requireJoin, memberUpload, async (req, res) => {
   const files = pickFiles(req.files);
@@ -156,14 +146,9 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
   }
   input.email = req.joinEmail; // always the verified address
 
-  // Pay first: the details are accepted only after the membership fee is paid, and the
-  // plan is the one that was paid for.
+  // A payment not used yet (e.g. kept after a rejection) is re-used for the plan it paid for.
   const paidOrder = await unusedPaidOrder(req.joinEmail);
-  if (!paidOrder) {
-    await removeUploaded(files);
-    return res.status(402).json({ code: "PAYMENT_REQUIRED", message: "Please pay the membership fee before filling in your details." });
-  }
-  input.membershipType = paidOrder.membershipType;
+  if (paidOrder) input.membershipType = paidOrder.membershipType;
 
   // Filled from Aadhaar through DigiLocker: the locked fields always come from our own
   // verified record, never from what the browser sent.
@@ -211,14 +196,17 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
     ...data,
     documents: Object.fromEntries(Object.entries(files).map(([k, f]) => [k, toStoredFile(f)])),
     termsAcceptedAt: new Date(),
-    paymentOrderId: paidOrder._id,
+    status: paidOrder ? "PENDING" : "UNPAID",
+    paymentOrderId: paidOrder ? paidOrder._id : null,
   });
-  paidOrder.applicationId = application._id;
-  paidOrder.name = application.name;
-  if (paidOrder.failureReason.startsWith("Application ")) paidOrder.failureReason = ""; // resubmitted after a rejection
-  await paidOrder.save();
-  await trySend(() => sendApplicationReceivedEmail(application, { paid: true }));
-  await trySend(() => sendNewApplicationAdminEmail(application));
+  if (paidOrder) {
+    paidOrder.applicationId = application._id;
+    paidOrder.name = application.name;
+    if (paidOrder.failureReason.startsWith("Application ") || paidOrder.failureReason.startsWith("Paid, but the application")) paidOrder.failureReason = "";
+    await paidOrder.save();
+    await trySend(() => sendApplicationReceivedEmail(application, { paid: true }));
+    await trySend(() => sendNewApplicationAdminEmail(application));
+  }
   res.status(201).json(await applicationResponse(application));
 });
 
@@ -261,10 +249,18 @@ router.delete("/application", requireJoin, async (req, res) => {
   res.json({ cancelled: open.length });
 });
 
-// POST /api/join/application/checkout — start the online payment (approved applications only).
+// POST /api/join/application/checkout — pay for the submitted application (UNPAID, or
+// APPROVED under the older flow).
 router.post("/application/checkout", requireJoin, async (req, res) => {
-  const application = await Application.findOne({ email: req.joinEmail, status: "APPROVED" }).sort({ createdAt: -1 });
-  if (!application) return res.status(404).json({ message: "Your application has not been approved yet, so it cannot be paid for." });
+  const application = await Application.findOne({ email: req.joinEmail, status: { $in: ["UNPAID", "APPROVED"] } }).sort({ createdAt: -1 });
+  if (!application) {
+    const pending = await Application.exists({ email: req.joinEmail, status: "PENDING" });
+    return res.status(pending ? 409 : 404).json(
+      pending
+        ? { code: "ALREADY_PAID", message: "Your payment has been received and your application is being reviewed. You do not need to pay again." }
+        : { message: "Please fill in your details first." }
+    );
+  }
   if (await Member.exists({ email: req.joinEmail })) return res.status(409).json(MEMBER_EXISTS);
   res.json({ checkout: await startCheckout({ purpose: "NEW", application }) });
 });
