@@ -99,6 +99,7 @@ function serializeApplication(a, { full = false } = {}) {
     createdAt: o.createdAt,
     memberId: o.memberId,
     paymentOrderId: o.paymentOrderId || null,
+    paidOnPage: !!o.paidOnPage,
     paymentReference: o.paymentReference || "",
     paymentReportedAt: o.paymentReportedAt || null,
     paymentVerified: !!o.paymentVerified,

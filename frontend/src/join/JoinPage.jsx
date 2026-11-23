@@ -9,7 +9,7 @@ import PlanCards from "../public/PlanCards";
 import Checkout from "../payments/Checkout";
 import CodeForm from "../ui/CodeForm";
 import Icon from "../ui/icons";
-import { Alert, Card, Details, Field, Spinner, buttonClass, inputClass } from "../ui/form";
+import { Alert, Card, Details, Spinner, buttonClass } from "../ui/form";
 
 // Joining, in the order of the process flow:
 //   plan -> verify email (duplicate check + OTP) -> details -> pay -> admin review
@@ -67,8 +67,7 @@ export default function JoinPage() {
   const [checkout, setCheckout] = useState(null);
   const [payMessage, setPayMessage] = useState(null);
   const [paidOrder, setPaidOrder] = useState(null); // fee paid, details not yet approved
-  const [reference, setReference] = useState(""); // Zoho payment page: the payment ID
-  const [refError, setRefError] = useState("");
+  const [pagePaying, setPagePaying] = useState(false); // Zoho payment page opened in another tab
   // DigiLocker (Aadhaar auto-fill for the plans in config.digilocker.types — Annual and Life):
   //   digi    { verificationId, last4, locked } once the details came from Aadhaar
   //   manual  the applicant chose, or was sent back, to fill the form by hand
@@ -445,19 +444,31 @@ export default function JoinPage() {
   );
   const onCancel = useCallback(() => setCheckout(null), []);
 
-  // Zoho payment page: the applicant paid there and enters the Zoho payment ID.
-  async function submitReference(e) {
-    e.preventDefault();
-    if (reference.trim().length < 4) return setRefError("Enter the payment ID shown by Zoho after paying.");
+  // Zoho payment page: Zoho's webhook sends the application to the admin by itself. While the
+  // applicant pays in the other tab, check every few seconds and move on once it has.
+  const waitingForZoho = step === "pay" && application?.status === "UNPAID" && pagePaying;
+  useEffect(() => {
+    if (!waitingForZoho) return;
+    const timer = setInterval(async () => {
+      const res = await api("/join/application", { auth: "join" }).catch(() => null);
+      if (res?.application && res.application.status !== "UNPAID") {
+        setApplication(res.application);
+        setStep(stepFor(res.application));
+      }
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [waitingForZoho]);
+
+  // "I have completed the payment": for when Zoho's confirmation is late or another email was
+  // used on the Zoho page. The membership office then checks the payment in Zoho.
+  async function markPaid() {
     setBusy(true);
     setBanner("");
     try {
-      const res = await api("/join/application/payment-reference", { method: "POST", json: { reference: reference.trim() }, auth: "join" });
+      const res = await api("/join/application/paid", { method: "POST", auth: "join" });
       setApplication(res.application);
-      setReference("");
       setStep("review");
     } catch (err) {
-      setRefError((err instanceof ApiError && err.errors?.reference) || "");
       setBanner(err.message);
     } finally {
       setBusy(false);
@@ -576,14 +587,16 @@ export default function JoinPage() {
           <p className="mt-2 text-sm text-slate-600">
             Your application for <strong>{application.typeLabel}</strong>, submitted on {formatDate(application.createdAt)}, is being reviewed by the
             Membership Section.
-            {application.paymentReference
-              ? ` We will check your payment (Zoho Payment ID ${application.paymentReference}).`
+            {application.paidOnPage
+              ? application.paymentVerified
+                ? " Your payment has been received."
+                : " We will check your payment."
               : application.paymentOrderId
                 ? " Your payment has been received."
                 : " You do not need to pay anything yet."}
           </p>
           <p className="mt-3 text-sm text-slate-600">
-            {application.paymentOrderId || application.paymentReference ? (
+            {application.paymentOrderId || application.paidOnPage ? (
               <>
                 Once it is approved, your membership number, ID card and payment receipt will be emailed to <strong>{application.email}</strong>.
               </>
@@ -599,7 +612,7 @@ export default function JoinPage() {
               Back to home
             </Link>
             <button type="button" className={buttonClass.secondary} disabled={busy} onClick={startOver}>
-              {application.paymentOrderId || application.paymentReference ? "Withdraw and fill the form again" : "Withdraw and start a new application"}
+              {application.paymentOrderId || application.paidOnPage ? "Withdraw and fill the form again" : "Withdraw and start a new application"}
             </button>
           </div>
         </Card>
@@ -796,34 +809,32 @@ export default function JoinPage() {
               </div>
               {payMessage && <Alert kind={payMessage.kind}>{payMessage.text}</Alert>}
               {!config.onlinePayments.enabled && config.paymentPages?.[application.membershipType] ? (
-                <form onSubmit={submitReference} noValidate className="space-y-4">
-                  <ol className="list-decimal space-y-1.5 pl-5 text-sm text-slate-600">
-                    <li>
-                      Open the Zoho payment page for <strong>{application.typeLabel}</strong> and pay <strong>{formatMoney(application.amount)}</strong>.
-                      Please use <strong>{application.email}</strong> as your email there.
-                    </li>
-                    <li>After paying, Zoho shows a <strong>Payment ID</strong>. Copy it.</li>
-                    <li>Come back to this page and enter it below.</li>
-                  </ol>
-                  <a href={config.paymentPages[application.membershipType]} target="_blank" rel="noopener noreferrer" className={`${buttonClass.primary} w-full`}>
+                <div className="space-y-4">
+                  <p className="text-sm text-slate-600">
+                    Pay on the Zoho payment page for <strong>{application.typeLabel}</strong>. Please use <strong>{application.email}</strong> as your
+                    email there, so your payment is matched to your application.
+                  </p>
+                  <a
+                    href={config.paymentPages[application.membershipType]}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className={`${buttonClass.primary} w-full`}
+                    onClick={() => setPagePaying(true)}
+                  >
                     Pay {formatMoney(application.amount)} on Zoho
                   </a>
-                  <Field label="Zoho Payment ID" htmlFor="pay-ref" required error={refError}>
-                    <input
-                      id="pay-ref"
-                      className={inputClass(refError)}
-                      value={reference}
-                      autoComplete="off"
-                      onChange={(e) => {
-                        setReference(e.target.value);
-                        setRefError("");
-                      }}
-                    />
-                  </Field>
-                  <button type="submit" className={`${buttonClass.secondary} w-full`} disabled={busy}>
-                    {busy ? "Submitting…" : "Submit payment ID"}
-                  </button>
-                </form>
+                  {pagePaying && (
+                    <>
+                      <p className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                        <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-brand-700" />
+                        Waiting for Zoho to confirm your payment. This page moves on by itself once it does.
+                      </p>
+                      <button type="button" className={`${buttonClass.secondary} w-full`} disabled={busy} onClick={markPaid}>
+                        {busy ? "Please wait…" : "I have completed the payment"}
+                      </button>
+                    </>
+                  )}
+                </div>
               ) : !config.onlinePayments.enabled ? (
                 <Alert kind="warning" title="Online payment is not available yet">
                   Please contact the membership office{config.contact.email ? ` at ${config.contact.email}` : ""} to complete the payment.

@@ -1,20 +1,25 @@
 const ZohoPayment = require("./ZohoPayment");
 const Application = require("../join/Application");
 const { MEMBERSHIP_TYPES } = require("../config/membership");
+const { sendApplicationReceivedEmail, sendNewApplicationAdminEmail, trySend } = require("../mail/mailer");
 
-// Payments made on the Zoho payment page (one page for all plans).
+// Payments made on the Zoho payment pages (one page per plan, fee fixed).
 //
-// Zoho calls the webhook for every payment; it is stored in ZohoPayment. The applicant enters
-// the Zoho payment ID on the join page; when both are there and the amount matches the plan,
-// the application is marked "verified by Zoho". The admin approves either way, but sees
-// whether Zoho confirmed the payment.
+// Zoho calls the webhook for every payment; it is stored in ZohoPayment and matched to the
+// applicant's application by email: the application then goes to the admin for review, marked
+// "verified by Zoho". If Zoho's message does not come (or another email was used on the page),
+// the applicant clicks "I have completed the payment" and the admin checks it in Zoho.
 
 const pick = (...values) => values.find((v) => v !== undefined && v !== null && v !== "") || "";
 
-// Stores (or updates) a payment from the webhook, then verifies a waiting application.
+function referenceRegex(reference) {
+  return new RegExp(`^${String(reference).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+}
+
+// Stores (or updates) a payment from the webhook, then finds the application it pays for.
 async function recordWebhookPayment(payment, { liveMode = true } = {}) {
   if (!payment || !payment.payment_id) return null;
-  const customer = payment.customer || payment.customer_details || {};
+  const customer = payment.customer || payment.customer_details || payment.billing_details || {};
   const doc = await ZohoPayment.findOneAndUpdate(
     { paymentId: String(payment.payment_id) },
     {
@@ -22,7 +27,7 @@ async function recordWebhookPayment(payment, { liveMode = true } = {}) {
         status: String(payment.status || ""),
         amount: Number(payment.amount) || 0,
         currency: payment.currency || "INR",
-        email: String(pick(payment.email, payment.customer_email, customer.email, payment.receipt_email)),
+        email: String(pick(payment.email, payment.customer_email, payment.email_id, customer.email, customer.email_id, payment.receipt_email)),
         name: String(pick(payment.customer_name, customer.name, payment.name)),
         method: String((payment.payment_method && payment.payment_method.type) || ""),
         liveMode,
@@ -32,18 +37,43 @@ async function recordWebhookPayment(payment, { liveMode = true } = {}) {
     },
     { upsert: true, returnDocument: "after" }
   );
-  const waiting = await Application.findOne({ status: "PENDING", paymentReference: referenceRegex(doc.paymentId) });
-  if (waiting) await verifyApplication(waiting);
+  if (doc.status !== "succeeded" || doc.applicationId) return doc;
+
+  const application =
+    (await Application.findOne({ status: "PENDING", paymentReference: referenceRegex(doc.paymentId) })) ||
+    (doc.email
+      ? await Application.findOne({ email: doc.email, status: { $in: ["UNPAID", "PENDING"] }, paymentReference: "", paymentOrderId: null }).sort({ createdAt: -1 })
+      : null);
+  if (application) await attachPayment(application, doc);
+  else console.warn(`[ZOHO PAGE] Payment ${doc.paymentId}${doc.email ? ` from ${doc.email}` : " (no email)"} matches no application yet.`);
   return doc;
 }
 
-function referenceRegex(reference) {
-  return new RegExp(`^${String(reference).trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+// Links a Zoho payment to the application: it goes to the admin (if it was waiting for payment).
+async function attachPayment(application, payment) {
+  const wasUnpaid = application.status === "UNPAID";
+  application.paidOnPage = true;
+  application.paymentReference = payment.paymentId;
+  if (!application.paymentReportedAt) application.paymentReportedAt = payment.paidAt || new Date();
+  application.status = "PENDING";
+  await verifyApplication(application); // saves
+  if (wasUnpaid) {
+    await trySend(() => sendApplicationReceivedEmail(application, { paid: true }));
+    await trySend(() => sendNewApplicationAdminEmail(application));
+  }
 }
 
-// Checks the application's payment ID against the payments Zoho reported. Saves and returns
-// { verified, note } — note says why it is not verified.
+// A payment Zoho reported for this applicant's email that is not linked to anything yet.
+function unlinkedPaymentFor(application) {
+  return ZohoPayment.findOne({ email: application.email, status: "succeeded", applicationId: null }).sort({ paidAt: -1 });
+}
+
+// Checks the application's payment against what Zoho reported. Saves; returns { verified, note }.
 async function verifyApplication(application) {
+  if (!application.paymentReference && application.paidOnPage) {
+    const found = await unlinkedPaymentFor(application);
+    if (found) application.paymentReference = found.paymentId;
+  }
   const result = await checkReference(application.paymentReference, application);
   application.paymentVerified = result.verified;
   application.paymentNote = result.note;
@@ -56,7 +86,7 @@ async function verifyApplication(application) {
 }
 
 async function checkReference(reference, application) {
-  if (!reference) return { verified: false, note: "" };
+  if (!reference) return { verified: false, note: `Zoho has not reported a payment from ${application.email} yet.` };
   const payment = await ZohoPayment.findOne({ paymentId: referenceRegex(reference) });
   if (!payment) return { verified: false, note: "Not received from Zoho yet." };
   if (payment.status !== "succeeded") return { verified: false, note: `Zoho reports this payment as ${payment.status || "unknown"}.`, payment };
@@ -66,9 +96,9 @@ async function checkReference(reference, application) {
       return { verified: false, note: "This payment is already linked to another application.", payment };
     }
   }
-  const fee = MEMBERSHIP_TYPES[application.membershipType] ? MEMBERSHIP_TYPES[application.membershipType].fee : null;
-  if (fee !== null && Math.abs(payment.amount - fee) > 0.001) {
-    return { verified: false, note: `Zoho received Rs. ${payment.amount}, but the ${MEMBERSHIP_TYPES[application.membershipType].label} fee is Rs. ${fee}.`, payment };
+  const type = MEMBERSHIP_TYPES[application.membershipType];
+  if (type && Math.abs(payment.amount - type.fee) > 0.001) {
+    return { verified: false, note: `Zoho received Rs. ${payment.amount}, but the ${type.label} fee is Rs. ${type.fee}.`, payment };
   }
   return { verified: true, note: `Verified by Zoho: Rs. ${payment.amount}${payment.method ? ` by ${payment.method}` : ""}.`, payment };
 }

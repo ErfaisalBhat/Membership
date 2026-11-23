@@ -75,8 +75,8 @@ function Approve({ application, onDone, onRegistered }) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const paid = !!application.paymentOrderId || !!application.paymentReference;
-  const unverifiedPage = !!application.paymentReference && !application.paymentVerified;
+  const paid = !!application.paymentOrderId || !!application.paidOnPage;
+  const unverifiedPage = !!application.paidOnPage && !application.paymentVerified;
 
   async function approve() {
     setBusy(true);
@@ -95,7 +95,7 @@ function Approve({ application, onDone, onRegistered }) {
     <div className="space-y-3">
       <p className="text-sm text-slate-600">
         {unverifiedPage
-          ? `Zoho has not confirmed this payment yet. Check the Payment ID in your Zoho Payments dashboard before approving. When you approve, the applicant becomes a member at once and gets the welcome email with ID card and receipt.`
+          ? `Zoho has not confirmed this payment yet. Check it in your Zoho Payments dashboard (search for the applicant's email) before approving. When you approve, the applicant becomes a member at once and gets the welcome email with ID card and receipt.`
           : paid
           ? `Check the details and documents. The applicant has already paid ${formatMoney(application.amount)} online. When you approve, they become a member at once and get the welcome email with ID card and receipt.`
           : `Check the details and documents. When you approve, the applicant is emailed a link to pay ${formatMoney(application.amount)}. They become a member and get their ID card once the payment is confirmed.`}
@@ -144,10 +144,10 @@ function Reject({ application, onDone }) {
       <Field label="Reason" htmlFor="r-reason" required hint="Sent to the applicant. For example: the ID proof is not readable.">
         <textarea id="r-reason" rows={3} maxLength={500} className={inputClass()} value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
-      {application.paymentReference && (
+      {application.paidOnPage && (
         <label className="flex items-start gap-2 text-sm text-slate-700">
           <input type="checkbox" className="mt-0.5 h-4 w-4" checked={paymentNotFound} onChange={(e) => setPaymentNotFound(e.target.checked)} />
-          <span>The payment was not found in Zoho (the applicant cannot re-use this Payment ID).</span>
+          <span>The payment was not found in Zoho (the applicant must pay again to reapply).</span>
         </label>
       )}
       {confirming ? (
@@ -285,11 +285,16 @@ export default function ApplicationDetailPage() {
       {a.status === "PENDING" && a.paymentOrderId && (
         <Alert kind="info">Paid online. Approving registers the member straight away. Rejecting flags the payment for a refund under Payments.</Alert>
       )}
-      {a.paymentReference && ["PENDING", "APPROVED"].includes(a.status) && (
-        <Alert kind={a.paymentVerified ? "success" : "warning"} title={`Zoho Payment ID: ${a.paymentReference}`}>
+      {a.paidOnPage && ["PENDING", "APPROVED"].includes(a.status) && (
+        <Alert
+          kind={a.paymentVerified ? "success" : "warning"}
+          title={a.paymentVerified ? `Paid on Zoho · Payment ID ${a.paymentReference}` : "Payment not confirmed by Zoho yet"}
+        >
           {a.paymentVerified
             ? `${a.paymentNote} Approving registers the member straight away.`
-            : `${a.paymentNote || "Not confirmed by Zoho yet."} Paid on the Zoho payment page${a.paymentReportedAt ? ` (reported ${formatDate(a.paymentReportedAt)})` : ""}. Check it in your Zoho Payments dashboard before approving.`}
+            : `${a.paymentNote || "Not confirmed by Zoho yet."} The applicant says they paid on the Zoho payment page${
+                a.paymentReportedAt ? ` (${formatDate(a.paymentReportedAt)})` : ""
+              }. Check it in your Zoho Payments dashboard before approving.`}
         </Alert>
       )}
       {a.status === "UNPAID" && (
@@ -406,7 +411,7 @@ export default function ApplicationDetailPage() {
             <Card title="Reject">
               <Reject application={a} onDone={updated} />
             </Card>
-            {!a.paymentOrderId && !a.paymentReference && (
+            {!a.paymentOrderId && !a.paidOnPage && (
               <Card title="Paid offline?">
                 <RecordPayment application={a} config={config} onDone={registered} />
               </Card>

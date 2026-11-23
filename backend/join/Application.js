@@ -3,7 +3,7 @@ const { personFields } = require("../members/memberFields");
 
 // An online sign-up: plan -> verify email -> details -> pay -> admin review. Statuses:
 //   UNPAID    details filled in, waiting for the applicant to pay (not shown for review yet)
-//   PENDING   paid (paymentOrderId, or paymentReference from the Zoho payment page),
+//   PENDING   paid (paymentOrderId, or paidOnPage for the Zoho payment page),
 //             waiting for the admin to review it
 //   APPROVED  older flow only: approved by the admin, waiting for the applicant to pay
 //   PAID      approved and registered; a Member was created from it (memberId)
@@ -21,7 +21,9 @@ const applicationSchema = new mongoose.Schema(
     memberId: { type: mongoose.Schema.Types.ObjectId, ref: "Member", default: null },
     // The online payment for this application (set once it is paid).
     paymentOrderId: { type: mongoose.Schema.Types.ObjectId, ref: "PaymentOrder", default: null },
-    // Paid on the Zoho payment page: the payment ID the applicant entered (checked by the admin).
+    // Paid on the Zoho payment page. paymentReference is the Zoho payment ID, filled when
+    // Zoho's webhook reports a payment from the applicant's email (or carried over after a rejection).
+    paidOnPage: { type: Boolean, default: false },
     paymentReference: { type: String, default: "", trim: true },
     paymentReportedAt: { type: Date, default: null },
     paymentVerified: { type: Boolean, default: false }, // the Zoho webhook confirmed it

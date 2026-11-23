@@ -12,7 +12,7 @@ const { sendCodeEmail, sendApplicationReceivedEmail, sendNewApplicationAdminEmai
 const { startCheckout, confirmFromBrowser, publicOrder, unusedPaidOrder } = require("../payments/service");
 const { MEMBERSHIP_TYPES, PAYMENT_PAGES } = require("../config/membership");
 const { memberUpload, pickFiles, checkFileContents, toStoredFile, removeUploaded, removeStoredFiles } = require("../documents/upload");
-const { verifyApplication, referenceRegex } = require("../payments/zohoPage");
+const { verifyApplication } = require("../payments/zohoPage");
 const digilocker = require("../digilocker/service");
 const digilockerHealth = require("../digilocker/health");
 const { MESSAGES: DIGILOCKER_MESSAGES } = require("../digilocker/errors");
@@ -210,6 +210,7 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
     termsAcceptedAt: new Date(),
     status: paidOrder || oldReference ? "PENDING" : "UNPAID",
     paymentOrderId: paidOrder ? paidOrder._id : null,
+    paidOnPage: !!oldReference,
     paymentReference: oldReference ? oldReference.paymentReference : "",
     paymentReportedAt: oldReference ? oldReference.paymentReportedAt : null,
   });
@@ -266,31 +267,21 @@ router.delete("/application", requireJoin, async (req, res) => {
   res.json({ cancelled: open.length });
 });
 
-// POST /api/join/application/payment-reference { reference } — paid on the Zoho payment page:
-// the applicant enters the Zoho payment ID and the application goes to the admin, who checks
-// the payment in Zoho before approving.
-router.post("/application/payment-reference", requireJoin, async (req, res) => {
-  const reference = String((req.body && req.body.reference) || "").trim();
-  if (reference.length < 4 || reference.length > 100) {
-    return res.status(400).json({ message: "Enter the payment ID shown by Zoho after paying.", errors: { reference: "Enter the payment ID from Zoho." } });
-  }
-  const application = await Application.findOne({ email: req.joinEmail, status: "UNPAID" }).sort({ createdAt: -1 });
+// POST /api/join/application/paid — "I have completed the payment" on the Zoho payment page.
+// Usually not needed: Zoho's webhook sends the application to the admin by itself. This is for
+// when Zoho's message is late or another email was used on the page; the admin then checks the
+// payment in Zoho before approving.
+router.post("/application/paid", requireJoin, async (req, res) => {
+  const application = await Application.findOne({ email: req.joinEmail, status: { $in: ["UNPAID", "PENDING"] } }).sort({ createdAt: -1 });
   if (!application) return res.status(404).json({ message: "Please fill in your details first." });
+  if (application.status === "PENDING") return res.json(await applicationResponse(application)); // the webhook was first
   if (!PAYMENT_PAGES[application.membershipType]) {
     return res.status(400).json({ message: "Paying on the payment page is not available for this plan. Please contact the membership office." });
   }
-  const used = await Application.exists({
-    _id: { $ne: application._id },
-    paymentReference: referenceRegex(reference),
-    status: { $in: ["PENDING", "APPROVED", "PAID"] },
-  });
-  if (used) {
-    return res.status(409).json({ message: "This payment ID has already been used for another application.", errors: { reference: "Already used." } });
-  }
-  application.paymentReference = reference;
+  application.paidOnPage = true;
   application.paymentReportedAt = new Date();
   application.status = "PENDING";
-  await verifyApplication(application); // saves; verified now if Zoho's webhook already arrived
+  await verifyApplication(application); // saves; links Zoho's payment if it already arrived
   await trySend(() => sendApplicationReceivedEmail(application, { paid: true }));
   await trySend(() => sendNewApplicationAdminEmail(application));
   res.json(await applicationResponse(application));

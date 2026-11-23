@@ -97,7 +97,7 @@ router.get("/applications/:id", async (req, res) => {
   const application = await loadById(Application, req.params.id, res, "Application");
   if (!application) return;
   // Zoho payment page: check again in case Zoho's webhook arrived after the applicant submitted.
-  if (application.status === "PENDING" && application.paymentReference && !application.paymentVerified) {
+  if (application.status === "PENDING" && application.paidOnPage && !application.paymentVerified) {
     await verifyApplication(application);
   }
   const orders = await PaymentOrder.find({ applicationId: application._id }).sort({ createdAt: -1 }).lean();
@@ -163,18 +163,20 @@ router.post("/applications/:id/approve", async (req, res) => {
       email,
     });
   }
-  if (application.paymentReference) {
+  if (application.paidOnPage || application.paymentReference) {
     // Paid on the Zoho payment page (verified by the webhook, or checked by the admin in Zoho).
     application.reviewedAt = new Date();
     application.reviewNote = "";
     const { member, entry } = await createMemberFromApplication(application, {
       amount: MEMBERSHIP_TYPES[application.membershipType].fee,
       mode: "Online",
-      reference: `Zoho ${application.paymentReference}`.slice(0, 100),
+      reference: application.paymentReference ? `Zoho ${application.paymentReference}`.slice(0, 100) : "Zoho payment page",
       date: todayIST(),
       source: "OFFLINE",
     });
-    await ZohoPayment.updateOne({ paymentId: referenceRegex(application.paymentReference) }, { $set: { applicationId: application._id } });
+    if (application.paymentReference) {
+      await ZohoPayment.updateOne({ paymentId: referenceRegex(application.paymentReference) }, { $set: { applicationId: application._id } });
+    }
     const email = await trySend(() => sendCardEmail(member, "welcome", { payment: entry }));
     return res.json({ application: serializeApplication(application, { full: true }), memberId: member._id, membershipId: member.membershipId, email });
   }
@@ -199,9 +201,10 @@ router.post("/applications/:id/reject", async (req, res) => {
   application.reviewedAt = new Date();
   application.reviewNote = reason;
   // The Zoho payment ID is not genuine: it is not carried over to a new application.
-  if (req.body && req.body.paymentNotFound && application.paymentReference) {
-    application.invalidPaymentReference = application.paymentReference;
+  if (req.body && req.body.paymentNotFound && application.paidOnPage) {
+    application.invalidPaymentReference = application.paymentReference || "(none)";
     application.paymentReference = "";
+    application.paidOnPage = false;
   }
   await application.save();
   await deleteDocuments(application);
@@ -209,6 +212,7 @@ router.post("/applications/:id/reject", async (req, res) => {
     { applicationId: application._id, status: "CREATED" },
     { $set: { status: "FAILED", failureReason: "Closed: the application was rejected." } }
   );
+  // A payment Zoho confirmed is kept for a new application (see join.routes unusedPaymentReference).
   const paid = (await flagForRefund(application, "rejected")) || !!application.paymentReference;
   const email = await trySend(() => sendApplicationRejectedEmail(application, reason, { paid }));
   res.json({ application: serializeApplication(application, { full: true }), email });
