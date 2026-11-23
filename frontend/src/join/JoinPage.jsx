@@ -129,12 +129,20 @@ export default function JoinPage() {
     setStep("details");
   }
 
-  // ---------- draft: what the applicant typed survives only the DigiLocker round trip ----------
+  // ---------- draft: what the applicant typed survives a refresh and the DigiLocker round trip ----------
+  // Kept in this browser tab only (sessionStorage); uploaded files can't be kept and are chosen again.
   const DRAFT_KEY = "mp_join_draft";
+  function readDraft() {
+    try {
+      return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || "null");
+    } catch {
+      return null; // storage unavailable
+    }
+  }
   // withPlan: false when the applicant has just chosen a plan again (after verifying their email).
   function restoreDraft(forEmail, { withPlan = true } = {}) {
     try {
-      const d = JSON.parse(sessionStorage.getItem(DRAFT_KEY) || "null");
+      const d = readDraft();
       if (d && d.email === forEmail && d.form) {
         setForm((f) => ({ ...f, ...d.form, address: { ...f.address, ...d.form.address }, affiliation: { ...f.affiliation, ...d.form.affiliation } }));
         if (withPlan && d.plan) setPlan(d.plan);
@@ -161,17 +169,16 @@ export default function JoinPage() {
     }
   }, [step, email, plan, form]);
 
-  // Every fresh visit or refresh starts over: the saved join session and draft are dropped.
-  // Only a return from DigiLocker (?dl=) continues, because that trip leaves the page.
+  // A refresh (or the return from DigiLocker, ?dl=) continues where the applicant was: the
+  // verified email, the details typed so far and the application are picked up again.
+  // A new visit in a new tab starts from the plans.
   useEffect(() => {
-    if (!params.get("dl")) {
-      joinTokenStore.clear();
+    if (!joinTokenStore.get()) {
       clearDraft();
-      // ?continue=1 (link in the approval email): straight to email verification.
-      return setStep(params.get("continue") ? "email" : "plan");
+      // ?dl= without a session (e.g. DigiLocker opened in another tab), or ?continue=1 (link in
+      // an email): verify the email first.
+      return setStep(params.get("dl") || params.get("continue") ? "email" : "plan");
     }
-    // ?dl= without a session (e.g. DigiLocker opened in another tab): verify the email first.
-    if (!joinTokenStore.get()) return setStep("email");
     api("/join/application", { auth: "join" })
       .then((res) => {
         setPaidOrder(res.paidOrder || null);
@@ -188,7 +195,7 @@ export default function JoinPage() {
           // Already verified: straight back to the filled, locked form.
           setEmail(res.email);
           restoreDraft(res.email);
-          applyDigilocker(res.digilocker, res.paidOrder?.membershipType || params.get("type") || "");
+          applyDigilocker(res.digilocker, res.paidOrder?.membershipType || params.get("type") || readDraft()?.plan || "");
           setStep("details");
         } else if (params.get("dl")) {
           return completeDigilocker(params.get("dl"));
@@ -200,7 +207,11 @@ export default function JoinPage() {
         } else if (res.email && restoreDraft(res.email)) {
           setEmail(res.email);
           setStep("details");
-        } else setStep("plan");
+        } else {
+          // Email verified but nothing typed yet: choose the plan, then straight to the details.
+          setEmail(res.email || "");
+          setStep("plan");
+        }
       })
       .catch(() => {
         joinTokenStore.clear();
@@ -446,7 +457,8 @@ export default function JoinPage() {
 
   // Zoho payment page: Zoho's webhook sends the application to the admin by itself. While the
   // applicant pays in the other tab, check every few seconds and move on once it has.
-  const waitingForZoho = step === "pay" && application?.status === "UNPAID" && pagePaying;
+  const waitingForZoho =
+    step === "pay" && application?.status === "UNPAID" && !config?.onlinePayments?.enabled && !!config?.paymentPages?.[application?.membershipType];
   useEffect(() => {
     if (!waitingForZoho) return;
     const timer = setInterval(async () => {
@@ -824,16 +836,14 @@ export default function JoinPage() {
                     Pay {formatMoney(application.amount)} on Zoho
                   </a>
                   {pagePaying && (
-                    <>
-                      <p className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
-                        <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-brand-700" />
-                        Waiting for Zoho to confirm your payment. This page moves on by itself once it does.
-                      </p>
-                      <button type="button" className={`${buttonClass.secondary} w-full`} disabled={busy} onClick={markPaid}>
-                        {busy ? "Please wait…" : "I have completed the payment"}
-                      </button>
-                    </>
+                    <p className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                      <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-brand-700" />
+                      Waiting for Zoho to confirm your payment. This page moves on by itself once it does.
+                    </p>
                   )}
+                  <button type="button" className={`${buttonClass.secondary} w-full`} disabled={busy} onClick={markPaid}>
+                    {busy ? "Please wait…" : "I have completed the payment"}
+                  </button>
                 </div>
               ) : !config.onlinePayments.enabled ? (
                 <Alert kind="warning" title="Online payment is not available yet">
