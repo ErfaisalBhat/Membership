@@ -623,9 +623,6 @@ export default function JoinPage() {
             <Link to="/" className={buttonClass.primary} onClick={() => joinTokenStore.clear()}>
               Back to home
             </Link>
-            <button type="button" className={buttonClass.secondary} disabled={busy} onClick={startOver}>
-              {application.paymentOrderId || application.paidOnPage ? "Withdraw and fill the form again" : "Withdraw and start a new application"}
-            </button>
           </div>
         </Card>
       )}
