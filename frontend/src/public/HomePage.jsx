@@ -5,7 +5,7 @@ import Icon from "../ui/icons";
 import PlanCards from "./PlanCards";
 
 const STEPS = [
-  { title: "Choose a plan", text: "Student, Annual, Life or Institutional membership." },
+  { title: "Choose a plan", text: "Annual, Life or Institutional membership." },
   { title: "Verify your email", text: "We send a 6-digit code. Your ID card is delivered to this address." },
   { title: "Fill the form", text: "Your details, address, affiliation and documents (photo, signature, ID)." },
   { title: "Application review", text: "The Membership Section reviews your application and emails you the result." },

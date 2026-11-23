@@ -7,7 +7,6 @@ function validity(t) {
 }
 
 const WHO = {
-  STUDENT: "For students enrolled in a university or institution.",
   ANNUAL: "For individuals, renewed every year.",
   LIFE: "One payment for lifelong membership.",
   INSTITUTIONAL: "For universities, colleges and organizations.",
@@ -17,7 +16,7 @@ const WHO = {
 // otherwise each card links to the join page with that plan chosen.
 export default function PlanCards({ config, selected, onSelect }) {
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4" role={onSelect ? "radiogroup" : undefined}>
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" role={onSelect ? "radiogroup" : undefined}>
       {config.membershipTypes.map((t) => {
         const active = selected === t.key;
         const body = (

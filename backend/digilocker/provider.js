@@ -7,7 +7,7 @@
 // Every provider exports:
 //   name
 //   problem()                                   null when ready, otherwise what is missing
-//   createUrl({ verificationId, redirectUrl, purpose, companyName })  -> { url } to send the student to
+//   createUrl({ verificationId, redirectUrl, purpose, companyName })  -> { url } to send the applicant to
 //   fetchAadhaar(verificationId)                -> Cashfree's Aadhaar document (+ user_details), or throws DigilockerError
 //   ping()                                      -> true when the service can be used right now
 

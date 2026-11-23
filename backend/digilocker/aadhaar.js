@@ -146,7 +146,7 @@ async function mapAadhaar(doc) {
 }
 
 // Form fields that came from Aadhaar and so are shown read-only (only those with a value;
-// anything Aadhaar doesn't have is left for the student to fill in).
+// anything Aadhaar doesn't have is left for the applicant to fill in).
 function lockedPaths(a = {}) {
   const paths = ["name", "dob", "gender", "fatherName"].filter((k) => a[k]);
   const ad = a.address || {};

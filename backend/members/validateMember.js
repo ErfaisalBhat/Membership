@@ -73,12 +73,10 @@ function validateAddress(input, errors, data, { aadhaarVerified = false } = {}) 
   if (!PINCODE_RE.test(data.address.pincode)) errors["address.pincode"] = "Enter a valid 6-digit PIN code.";
 }
 
-// Students are always affiliated. Course/semester for students, designation for others.
-function validateAffiliation(input, type, errors, data) {
-  const isStudent = type === "STUDENT";
-  data.affiliated = isStudent || yes(input.affiliated);
+function validateAffiliation(input, errors, data) {
+  data.affiliated = yes(input.affiliated);
   const af = input.affiliation || {};
-  data.affiliation = { institution: "", department: "", designation: "", course: "", semester: "", state: "" };
+  data.affiliation = { institution: "", department: "", designation: "", state: "" };
   if (!data.affiliated) return;
 
   data.affiliation.institution = s(af.institution);
@@ -87,15 +85,8 @@ function validateAffiliation(input, type, errors, data) {
   required(errors, "affiliation.department", data.affiliation.department, "Department is required.");
   data.affiliation.state = s(af.state);
   required(errors, "affiliation.state", data.affiliation.state, "Select state.", 60);
-  if (isStudent) {
-    data.affiliation.course = s(af.course);
-    required(errors, "affiliation.course", data.affiliation.course, "Course is required.");
-    data.affiliation.semester = s(af.semester);
-    required(errors, "affiliation.semester", data.affiliation.semester, "Semester is required.", 20);
-  } else {
-    data.affiliation.designation = s(af.designation);
-    required(errors, "affiliation.designation", data.affiliation.designation, "Designation is required.");
-  }
+  data.affiliation.designation = s(af.designation);
+  required(errors, "affiliation.designation", data.affiliation.designation, "Designation is required.");
 }
 
 /**
@@ -122,7 +113,6 @@ function validateMember(input, { files = {}, existing = null, mode = "admin", aa
   if (!MEMBERSHIP_TYPES[type]) errors.membershipType = "Select a membership type.";
   data.membershipType = type;
   const isInstitution = type === "INSTITUTIONAL";
-  const isStudent = type === "STUDENT";
 
   // Basic credentials
   data.name = s(input.name);
@@ -151,13 +141,13 @@ function validateMember(input, { files = {}, existing = null, mode = "admin", aa
   }
 
   validateAddress(input, errors, data, { aadhaarVerified });
-  validateAffiliation(input, type, errors, data);
+  validateAffiliation(input, errors, data);
 
   // Documents
   data.idProofType = aadhaarVerified ? "Aadhaar" : s(input.idProofType);
   if (!ID_PROOF_TYPES.includes(data.idProofType)) errors.idProofType = "Select the type of ID card.";
 
-  const needed = ["photo", "signature", ...(aadhaarVerified ? [] : ["idProof"]), ...(isStudent ? ["studentId"] : [])];
+  const needed = ["photo", "signature", ...(aadhaarVerified ? [] : ["idProof"])];
   for (const key of needed) {
     const hasExisting = existing && existing.documents && existing.documents[key] && existing.documents[key].filename;
     if (!files[key] && !hasExisting) errors[`documents.${key}`] = "This document is required.";
@@ -194,7 +184,7 @@ function validateSelfUpdate(input, member) {
   const data = {};
   validateWhatsapp(input, errors, data);
   validateAddress(input, errors, data, { aadhaarVerified: !!(member.aadhaar && member.aadhaar.verified) });
-  validateAffiliation(input, member.membershipType, errors, data);
+  validateAffiliation(input, errors, data);
   data.showInPublicList = yes(input.showInPublicList);
   return { data, errors };
 }

@@ -89,14 +89,9 @@ export default function MembersPage() {
       <PageHeader
         title="Members"
         actions={
-          <>
-            <button type="button" className={buttonClass.secondary} onClick={exportCsv} disabled={exporting}>
-              {exporting ? "Exporting…" : "Export CSV"}
-            </button>
-            <Link to="/admin/members/new" className={buttonClass.primary}>
-              + Add member
-            </Link>
-          </>
+          <button type="button" className={buttonClass.secondary} onClick={exportCsv} disabled={exporting}>
+            {exporting ? "Exporting…" : "Export CSV"}
+          </button>
         }
       />
 

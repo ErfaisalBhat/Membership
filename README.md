@@ -72,7 +72,8 @@ console. `EMAIL_MODE=file` also saves every email and its PDFs in `backend/email
 ## How it works
 
 **Joining online** (`/join`)
-1. Choose a plan (Student, Annual, Life, Institutional).
+1. Choose a plan (Annual, Life, Institutional). Annual and Life can fill the form from Aadhaar
+   through DigiLocker (`DIGILOCKER_TYPES` in `backend/config/membership.js`).
 2. Enter email → duplicate check (existing members are sent to member login) → 6-digit code.
 3. Fill the form (same fields as MEMBERSHIP FORM.docx), upload documents, accept the terms.
    This is saved as a **pending application**.
@@ -96,7 +97,7 @@ online from 60 days before expiry (or after expiry).
 
 **Numbers**: membership `ASSSR-2026-000001`, receipt `ASSSR/R/2026/000001`, online order `ASSSR-ORD-000001`.
 
-**Validity**: Student, Annual and Institutional last 12 months from joining (1 Apr 2026 → 31 Mar 2027).
+**Validity**: Annual and Institutional last 12 months from joining (1 Apr 2026 → 31 Mar 2027).
 Life never expires. A renewal while still valid starts the day after the current expiry;
 after expiry it starts from the payment date.
 

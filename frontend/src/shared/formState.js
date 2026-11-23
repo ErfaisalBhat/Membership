@@ -20,7 +20,7 @@ export const emptyPerson = () => ({
   dob: "",
   affiliated: "No",
   address: { line1: "", line2: "", city: "", state: "", pincode: "" },
-  affiliation: { institution: "", department: "", designation: "", course: "", semester: "", state: "" },
+  affiliation: { institution: "", department: "", designation: "", state: "" },
   idProofType: "",
   showInPublicList: false,
 });

@@ -4,17 +4,38 @@ import { api } from "../api/client";
 import { useConfig } from "../api/useConfig";
 import { formatDate, formatMoney } from "../shared/format";
 import StatusBadge from "../ui/StatusBadge";
-import { Alert, Card, PageHeader, Spinner, buttonClass } from "../ui/form";
+import { Alert, Spinner } from "../ui/form";
 
-function Stat({ label, value, to, tone = "text-slate-900", note }) {
+// One cell of the key-figures strip.
+function Figure({ label, value, note, to }) {
   return (
-    <Link to={to} className="rounded-lg border border-slate-200 bg-white p-4 shadow-xs transition hover:border-brand-500">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`mt-1 text-2xl font-semibold tabular-nums ${tone}`}>{value ?? "–"}</p>
-      {note && <p className="mt-0.5 text-xs text-slate-500">{note}</p>}
+    <Link to={to} className="group flex flex-col bg-white px-3 py-2 hover:bg-zinc-50">
+      <span className="truncate text-[10px] font-semibold uppercase leading-4 tracking-wider text-zinc-500">{label}</span>
+      <span className="text-lg font-bold leading-6 tabular-nums text-zinc-900">{value ?? "–"}</span>
+      <span className="truncate text-[11px] leading-4 text-zinc-500 group-hover:text-zinc-700">{note}</span>
     </Link>
   );
 }
+
+// A bordered panel with a title bar.
+function Panel({ title, to, linkLabel = "View all", children }) {
+  return (
+    <section className="min-w-0 border border-zinc-200 bg-white">
+      <div className="flex items-center justify-between gap-3 border-b border-zinc-200 bg-zinc-50 px-5 py-2.5">
+        <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-700">{title}</h2>
+        {to && (
+          <Link to={to} className="text-xs font-semibold text-zinc-600 hover:text-zinc-900 hover:underline">
+            {linkLabel} →
+          </Link>
+        )}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+const th = "px-5 py-2 text-left text-[11px] font-semibold uppercase tracking-wider text-zinc-500";
+const td = "px-5 py-2.5 align-middle";
 
 export default function DashboardPage() {
   const { config } = useConfig();
@@ -45,112 +66,97 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Dashboard"
-        subtitle={config.orgName}
-        actions={
-          <Link to="/admin/members/new" className={buttonClass.primary}>
-            + Add member
-          </Link>
-        }
-      />
-
       {overview.paymentsNeedingAttention > 0 && (
         <Alert kind="warning" title={`${overview.paymentsNeedingAttention} payment(s) need attention`}>
           Money was received but something went wrong (for example, paid twice).{" "}
-          <Link to="/admin/payments?attention=1" className="font-medium underline">
+          <Link to="/admin/payments?attention=1" className="font-semibold underline">
             Review payments
           </Link>
         </Alert>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Stat label="Members" value={stats.total} to="/admin/members" />
-        <Stat label="Active" value={stats.active} tone="text-green-700" to="/admin/members?status=ACTIVE" />
-        <Stat label="Expired" value={stats.expired} tone="text-amber-700" to="/admin/members?status=EXPIRED" />
-        <Stat label="Expiring in 30 days" value={stats.expiringSoon} tone="text-brand-700" to="/admin/members?expiring=30" />
-        <Stat label="Applications" value={overview.pendingApplications} tone="text-amber-700" note="waiting for review" to="/admin/applications" />
-        <Stat
+      {/* Key figures: one strip, cells separated by thin rules */}
+      <section className="grid grid-cols-2 gap-px border border-zinc-200 bg-zinc-200 md:grid-cols-3 xl:grid-cols-6" aria-label="Key figures">
+        <Figure label="Total members" value={stats.total} note="All records" to="/admin/members" />
+        <Figure label="Active" value={stats.active} note="Current membership" to="/admin/members?status=ACTIVE" />
+        <Figure label="Expired" value={stats.expired} note="Need renewal" to="/admin/members?status=EXPIRED" />
+        <Figure label="Expiring soon" value={stats.expiringSoon} note="Within 30 days" to="/admin/members?expiring=30" />
+        <Figure label="Applications" value={overview.pendingApplications} note="Awaiting review" to="/admin/applications" />
+        <Figure
           label="Online this month"
           value={formatMoney(overview.onlineThisMonth.total)}
           note={`${overview.onlineThisMonth.count} payment(s)`}
           to="/admin/payments?status=PAID"
         />
-      </div>
+      </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card
-          title="Latest payments"
-          padded={false}
-          action={
-            <Link to="/admin/payments" className={buttonClass.ghost}>
-              View all
-            </Link>
-          }
-        >
-          {payments.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-slate-500">No online payments yet.</p>
-          ) : (
-            <ul className="divide-y divide-slate-100">
-              {payments.map((p) => (
-                <li key={p._id} className="flex items-center justify-between gap-3 px-5 py-3">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-slate-900">{p.name}</p>
-                    <p className="text-xs text-slate-500">
-                      {p.purpose === "NEW" ? "New membership" : "Renewal"} · {formatDate(p.createdAt)}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-3">
-                    <span className="text-sm tabular-nums">{formatMoney(p.amount)}</span>
-                    <StatusBadge status={p.status} />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </Card>
-
-        <Card
-          title="Waiting for your review"
-          padded={false}
-          action={
-            <Link to="/admin/applications" className={buttonClass.ghost}>
-              View all
-            </Link>
-          }
-        >
+        <Panel title="Awaiting your review" to="/admin/applications">
           {applications.length === 0 ? (
-            <p className="px-5 py-8 text-center text-sm text-slate-500">No applications are waiting for review.</p>
+            <p className="px-5 py-10 text-center text-sm text-zinc-500">No applications are waiting for review.</p>
           ) : (
-            <ul className="divide-y divide-slate-100">
-              {applications.map((a) => (
-                <li key={a._id}>
-                  <Link to={`/admin/applications/${a._id}`} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50">
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-medium text-slate-900">{a.name}</p>
-                      <p className="truncate text-xs text-slate-500">
-                        {a.typeLabel} · applied {formatDate(a.createdAt)}
-                      </p>
-                    </div>
-                    <StatusBadge status="PENDING" />
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="border-b border-zinc-200">
+                  <tr>
+                    <th className={th}>Applicant</th>
+                    <th className={th}>Type</th>
+                    <th className={`${th} text-right`}>Applied</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {applications.map((a) => (
+                    <tr key={a._id} className="hover:bg-zinc-50">
+                      <td className={td}>
+                        <Link to={`/admin/applications/${a._id}`} className="font-semibold text-zinc-900 hover:underline">
+                          {a.name}
+                        </Link>
+                      </td>
+                      <td className={`${td} text-zinc-600`}>{a.typeLabel}</td>
+                      <td className={`${td} whitespace-nowrap text-right tabular-nums text-zinc-600`}>{formatDate(a.createdAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-        </Card>
+        </Panel>
+
+        <Panel title="Latest online payments" to="/admin/payments">
+          {payments.length === 0 ? (
+            <p className="px-5 py-10 text-center text-sm text-zinc-500">No online payments yet.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-sm">
+                <thead className="border-b border-zinc-200">
+                  <tr>
+                    <th className={th}>Payer</th>
+                    <th className={`${th} text-right`}>Amount</th>
+                    <th className={th}>Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-100">
+                  {payments.map((p) => (
+                    <tr key={p._id}>
+                      <td className={td}>
+                        <div className="font-semibold text-zinc-900">{p.name}</div>
+                        <div className="text-xs text-zinc-500">
+                          {p.purpose === "NEW" ? "New membership" : "Renewal"} · {formatDate(p.createdAt)}
+                        </div>
+                      </td>
+                      <td className={`${td} whitespace-nowrap text-right tabular-nums`}>{formatMoney(p.amount)}</td>
+                      <td className={td}>
+                        <StatusBadge status={p.status} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Panel>
       </div>
 
-      <Card title="Members by type">
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {config.membershipTypes.map((t) => (
-            <Link key={t.key} to={`/admin/members?type=${t.key}`} className="rounded-md bg-slate-50 px-4 py-3 hover:bg-brand-50">
-              <p className="text-xs text-slate-500">{t.label}</p>
-              <p className="text-xl font-semibold tabular-nums">{stats.byType[t.key] ?? 0}</p>
-            </Link>
-          ))}
-        </div>
-      </Card>
     </div>
   );
 }

@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 
 // One DigiLocker attempt by an applicant. A successful one is reused whenever the same
-// email fills the join form again (refresh, closed tab, new application), so the student
+// email fills the join form again (refresh, closed tab, new application), so the applicant
 // is never asked twice. Records are deleted after 30 days.
 const verificationSchema = new mongoose.Schema(
   {

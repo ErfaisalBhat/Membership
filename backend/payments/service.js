@@ -66,12 +66,14 @@ function checkoutPayload(order, client) {
   };
 }
 
-async function startCheckout({ purpose, application = null, member = null }) {
+// applicant: { name, email, membershipType } for a new membership paid before the
+// details are filled (no application yet).
+async function startCheckout({ purpose, application = null, member = null, applicant = null }) {
   const problem = paymentsProblem();
   if (problem) throw new PaymentError(`${problem} Please contact the membership office to pay.`, 503);
   const provider = activeProvider();
 
-  const person = application || member;
+  const person = application || member || applicant;
   const order = await PaymentOrder.create({
     orderNo: await nextOrderNo(),
     purpose,
@@ -119,6 +121,24 @@ async function activateOrder(orderId, { paymentId = "", method = "" } = {}) {
       source: "ONLINE",
       orderId: order._id,
     };
+
+    if (order.purpose === "NEW" && !order.applicationId) {
+      // Pay-first flow: the money is held until the applicant fills in their details and
+      // the admin approves; the member (and receipt) is created on approval.
+      if (await Member.exists({ email: order.email })) {
+        order.failureReason = "Paid, but a member with this email already exists. Check the member and refund if needed.";
+        await order.save();
+        console.error(`[PAYMENT] ${order.orderNo}: member with email already exists`);
+        return order;
+      }
+      const other = await PaymentOrder.exists({ _id: { $ne: order._id }, email: order.email, purpose: "NEW", status: "PAID", memberId: null });
+      if (other) {
+        order.failureReason = "Paid twice: this email already has an unused membership payment. Refund one of them.";
+        await order.save();
+        console.error(`[PAYMENT] ${order.orderNo}: second unused payment for ${order.email}`);
+      }
+      return order;
+    }
 
     if (order.purpose === "NEW") {
       const application = await Application.findById(order.applicationId);
@@ -176,6 +196,35 @@ async function activateOrder(orderId, { paymentId = "", method = "" } = {}) {
     );
     throw err;
   }
+}
+
+// The paid, not yet used payment of an applicant (pay-first flow), if any.
+function unusedPaidOrder(email) {
+  return PaymentOrder.findOne({ email, purpose: "NEW", status: "PAID", memberId: null }).sort({ paidAt: -1 });
+}
+
+// The admin approved an application that was paid online beforehand: register the member
+// with that payment, link everything and send the welcome email with ID card and receipt.
+async function registerPaidApplication(application, order) {
+  const payment = {
+    amount: order.amount,
+    mode: "Online",
+    reference: order.providerPaymentId || order.orderNo,
+    date: todayIST(),
+    source: "ONLINE",
+    orderId: order._id,
+  };
+  const { member, entry } = await createMemberFromApplication(application, payment);
+  order.applicationId = application._id;
+  order.memberId = member._id;
+  order.name = application.name;
+  order.receiptNo = entry.receiptNo;
+  order.periodFrom = entry.periodFrom;
+  order.periodTo = entry.periodTo;
+  order.failureReason = "";
+  await order.save();
+  const email = await trySend(() => sendCardEmail(member, "welcome", { payment: entry }));
+  return { member, entry, email };
 }
 
 async function failOrder(orderId, reason) {
@@ -251,6 +300,8 @@ module.exports = {
   publicOrder,
   addPayment,
   createMemberFromApplication,
+  registerPaidApplication,
+  unusedPaidOrder,
   startCheckout,
   activateOrder,
   failOrder,

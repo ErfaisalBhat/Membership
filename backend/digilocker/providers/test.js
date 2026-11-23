@@ -1,5 +1,5 @@
 // Fake DigiLocker for trying the join form on your own computer.
-// "Continue with DigiLocker" comes straight back as if the student had given consent,
+// "Continue with DigiLocker" comes straight back as if the applicant had given consent,
 // with the sample Aadhaar details below. Refused in production.
 //
 // DIGILOCKER_TEST_FAIL=1 makes it behave as if Cashfree were down, to try the manual fallback.
@@ -45,7 +45,7 @@ function samplePhoto(w = 120, h = 150) {
 const SAMPLE = {
   status: "SUCCESS",
   uid: "xxxxxxxx1234",
-  name: "Test Student",
+  name: "Test Applicant",
   dob: "15-08-2002",
   gender: "F",
   care_of: "D/O: Ramesh Kumar",

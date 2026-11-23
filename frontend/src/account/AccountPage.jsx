@@ -134,14 +134,13 @@ function EditDetails({ member, onSaved, onCancel }) {
     whatsapp: member.whatsapp || "",
     address: { line1: "", line2: "", city: "", state: "", pincode: "", ...member.address },
     affiliated: member.affiliated ? "Yes" : "No",
-    affiliation: { institution: "", department: "", designation: "", course: "", semester: "", state: "", ...member.affiliation },
+    affiliation: { institution: "", department: "", designation: "", state: "", ...member.affiliation },
     showInPublicList: !!member.showInPublicList,
   });
   const [errors, setErrors] = useState({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const isStudent = member.membershipType === "STUDENT";
-  const affiliated = isStudent || form.affiliated === "Yes";
+  const affiliated = form.affiliated === "Yes";
 
   const set = (path, value) => {
     setForm((f) => setIn(f, path, value));
@@ -195,21 +194,14 @@ function EditDetails({ member, onSaved, onCancel }) {
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Affiliated to an institute?" htmlFor="me-affiliated">
-          <select id="me-affiliated" className={inputClass()} value={affiliated ? "Yes" : "No"} disabled={isStudent} onChange={(e) => set("affiliated", e.target.value)}>
+          <select id="me-affiliated" className={inputClass()} value={affiliated ? "Yes" : "No"} onChange={(e) => set("affiliated", e.target.value)}>
             <option>No</option>
             <option>Yes</option>
           </select>
         </Field>
         {affiliated && (
           <>
-            {isStudent ? (
-              <>
-                {input("affiliation.course", "Course")}
-                {input("affiliation.semester", "Semester")}
-              </>
-            ) : (
-              input("affiliation.designation", "Designation")
-            )}
+            {input("affiliation.designation", "Designation")}
             {input("affiliation.department", "Department")}
             {input("affiliation.institution", "University / Institution / Organization", { className: "sm:col-span-2" })}
             {stateSelect("affiliation.state")}
@@ -393,7 +385,7 @@ function Dashboard() {
                     ["WhatsApp", member.whatsapp],
                     ...(isInstitution ? [["Authorized contact person", member.contactPerson]] : [["Date of birth", formatDate(member.dob)]]),
                     ["Address", [a.line1, a.line2, a.city, a.state && `${a.state} – ${a.pincode}`].filter(Boolean).join(", ")],
-                    ["Affiliation", member.affiliated ? [af.designation || [af.course, af.semester && `Semester ${af.semester}`].filter(Boolean).join(", "), af.department, af.institution].filter(Boolean).join(", ") : "Not affiliated"],
+                    ["Affiliation", member.affiliated ? [af.designation, af.department, af.institution].filter(Boolean).join(", ") : "Not affiliated"],
                     ["Members directory", member.showInPublicList ? "Listed" : "Not listed"],
                   ]}
                 />

@@ -40,8 +40,6 @@ const personFields = {
     institution: String,
     department: String,
     designation: String,
-    course: String,
-    semester: String,
     state: String,
   },
 
@@ -50,7 +48,6 @@ const personFields = {
     photo: fileSchema,
     signature: fileSchema,
     idProof: fileSchema,
-    studentId: fileSchema,
   },
 
   showInPublicList: { type: Boolean, default: false },

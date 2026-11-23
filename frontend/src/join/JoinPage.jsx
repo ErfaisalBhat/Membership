@@ -11,17 +11,18 @@ import CodeForm from "../ui/CodeForm";
 import Icon from "../ui/icons";
 import { Alert, Card, Details, Spinner, buttonClass } from "../ui/form";
 
-// Joining, in the order of the process flow:
-//   plan -> verify email (duplicate check + OTP) -> details -> admin review -> pay -> done
-// After submitting, the applicant waits for the admin. Verifying the same email later
-// shows the status: still under review, rejected (with the reason), or approved -> payment.
+// Joining, in the order of the process flow (pay first):
+//   plan -> verify email (duplicate check + OTP) -> pay -> details -> admin review
+// Once approved, the member is registered and the ID card emailed. Verifying the same
+// email later continues where they left off: paid -> details, submitted -> status.
+// (Applications approved under the older flow still pay on the "pay" step.)
 
 const STEPS = [
   ["plan", "Plan"],
   ["email", "Verify email"],
+  ["pay", "Payment"],
   ["details", "Your details"],
   ["review", "Review"],
-  ["pay", "Payment"],
 ];
 
 // Which step shows a saved application.
@@ -65,9 +66,10 @@ export default function JoinPage() {
   const [busy, setBusy] = useState(false);
   const [checkout, setCheckout] = useState(null);
   const [payMessage, setPayMessage] = useState(null);
-  // DigiLocker (Aadhaar auto-fill for students):
+  const [paidOrder, setPaidOrder] = useState(null); // fee paid, details not yet approved
+  // DigiLocker (Aadhaar auto-fill for the plans in config.digilocker.types — Annual and Life):
   //   digi    { verificationId, last4, locked } once the details came from Aadhaar
-  //   manual  the student chose, or was sent back, to fill the form by hand
+  //   manual  the applicant chose, or was sent back, to fill the form by hand
   const [digi, setDigi] = useState(null);
   const [savedDigi, setSavedDigi] = useState(null); // this email's verification, kept from the server
   const [manual, setManual] = useState(false);
@@ -78,12 +80,13 @@ export default function JoinPage() {
   const scrollTop = () => topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   // Fills the form from a DigiLocker result and locks those fields. Once verified, the
-  // student is never offered DigiLocker or the manual form again for this email.
-  function applyDigilocker(result) {
+  // applicant is never offered DigiLocker or the manual form again for this email.
+  // type: the plan the form is for (Annual or Life).
+  function applyDigilocker(result, type) {
     const p = result.prefill || {};
     const filled = (obj) => Object.fromEntries(Object.entries(obj || {}).filter(([, v]) => v));
     // Everything Aadhaar has replaces what was typed (those fields are locked); what Aadhaar
-    // doesn't have stays as the student typed it.
+    // doesn't have stays as the applicant typed it.
     const address = filled(p.address);
     if (p.address?.line1) address.line2 = p.address.line2 || "";
     setForm((f) => ({
@@ -91,18 +94,17 @@ export default function JoinPage() {
       ...filled({ name: p.name, dob: p.dob, gender: p.gender, fatherName: p.fatherName }),
       whatsapp: f.whatsapp || p.mobile || "", // Aadhaar mobile suggested; they can change it
       address: { ...f.address, ...address },
-      membershipType: "STUDENT",
-      affiliated: "Yes",
+      ...(type ? { membershipType: type } : {}),
     }));
     const d = { verificationId: result.verificationId, last4: result.last4, locked: result.locked || [], prefill: p, photo: result.photo || "" };
     setDigi(d);
     setSavedDigi(d);
-    setPlan("STUDENT");
+    if (type) setPlan(type);
     setManual(false);
     setDigiNotice("");
   }
 
-  // Back from DigiLocker (/join?type=STUDENT&dl=<id>): fill the form, or fall back to manual.
+  // Back from DigiLocker (/join?type=<plan>&dl=<id>): fill the form, or fall back to manual.
   async function completeDigilocker(verificationId) {
     let res;
     try {
@@ -115,17 +117,18 @@ export default function JoinPage() {
       setEmail(res.email);
       restoreDraft(res.email);
     }
-    if (res.verified) applyDigilocker(res);
+    const type = params.get("type") || "";
+    if (res.verified) applyDigilocker(res, type);
     else {
       setDigi(null);
       setManual(true);
       setDigiNotice(res.message);
-      setForm((f) => ({ ...f, membershipType: params.get("type") || "STUDENT", affiliated: "Yes" }));
+      if (type) setForm((f) => ({ ...f, membershipType: type }));
     }
     setStep("details");
   }
 
-  // ---------- draft: what the student typed survives a page refresh (not the files) ----------
+  // ---------- draft: what the applicant typed survives only the DigiLocker round trip ----------
   const DRAFT_KEY = "mp_join_draft";
   // withPlan: false when the applicant has just chosen a plan again (after verifying their email).
   function restoreDraft(forEmail, { withPlan = true } = {}) {
@@ -157,13 +160,21 @@ export default function JoinPage() {
     }
   }, [step, email, plan, form]);
 
-  // Coming back in the same tab (refresh, or back from DigiLocker): continue where they left off.
+  // Every fresh visit or refresh starts over: the saved join session and draft are dropped.
+  // Only a return from DigiLocker (?dl=) continues, because that trip leaves the page.
   useEffect(() => {
-    // ?continue=1 (link in the approval email): straight to email verification.
+    if (!params.get("dl")) {
+      joinTokenStore.clear();
+      clearDraft();
+      // ?continue=1 (link in the approval email): straight to email verification.
+      return setStep(params.get("continue") ? "email" : "plan");
+    }
     // ?dl= without a session (e.g. DigiLocker opened in another tab): verify the email first.
-    if (!joinTokenStore.get()) return setStep(params.get("continue") || params.get("dl") ? "email" : "plan");
+    if (!joinTokenStore.get()) return setStep("email");
     api("/join/application", { auth: "join" })
       .then((res) => {
+        setPaidOrder(res.paidOrder || null);
+        if (res.paidOrder) setPlan(res.paidOrder.membershipType);
         if (res.application?.status === "PAID" && res.member) {
           setApplication(res.application);
           setMember(res.member);
@@ -176,7 +187,7 @@ export default function JoinPage() {
           // Already verified: straight back to the filled, locked form.
           setEmail(res.email);
           restoreDraft(res.email);
-          applyDigilocker(res.digilocker);
+          applyDigilocker(res.digilocker, res.paidOrder?.membershipType || params.get("type") || "");
           setStep("details");
         } else if (params.get("dl")) {
           return completeDigilocker(params.get("dl"));
@@ -212,10 +223,10 @@ export default function JoinPage() {
 
   function choosePlan(key) {
     setPlan(key);
-    setForm((f) => ({ ...f, membershipType: key, affiliated: key === "STUDENT" ? "Yes" : f.affiliated }));
+    setForm((f) => ({ ...f, membershipType: key }));
     // Aadhaar auto-fill applies to some plans only. Going back to one re-uses the verification.
     if (config?.digilocker?.types?.includes(key)) {
-      if (savedDigi) applyDigilocker(savedDigi);
+      if (savedDigi) applyDigilocker(savedDigi, key);
     } else if (digi) setDigi(null);
   }
 
@@ -230,7 +241,7 @@ export default function JoinPage() {
       if (err.code === "DIGILOCKER_DONE") {
         // Verified in another tab or earlier: fetch it and fill the form.
         const res = await api("/join/application", { auth: "join" }).catch(() => null);
-        if (res?.digilocker) applyDigilocker(res.digilocker);
+        if (res?.digilocker) applyDigilocker(res.digilocker, plan);
         setBusy(false);
         return;
       }
@@ -257,35 +268,47 @@ export default function JoinPage() {
     joinTokenStore.set(res.joinToken);
     setEmail(res.email);
     setBanner("");
+    setPaidOrder(res.paidOrder || null);
     if (res.digilocker) setSavedDigi(res.digilocker);
     if (res.application && res.application.status !== "REJECTED") {
+      // Submitted and under review (or, older flow, approved and waiting for payment).
       setApplication(res.application);
       setStep(stepFor(res.application));
-    } else if (res.digilocker && !res.application) {
-      // Verified earlier (closed tab, new login): filled and locked, no DigiLocker again.
-      restoreDraft(res.email);
-      applyDigilocker(res.digilocker);
-      setApplication(null);
-      setStep("details");
-    } else if (params.get("dl")) await completeDigilocker(params.get("dl"));
-    else if (res.application) {
+    } else if (res.application) {
+      // Rejected: show the reason; "Start a new application" continues from there.
       setApplication(res.application);
-      setStep(stepFor(res.application));
-    } else {
+      setStep("review");
+    } else if (res.paidOrder) {
+      // Paid already: straight to the details for the plan that was paid for.
+      if (params.get("dl")) return completeDigilocker(params.get("dl"));
       restoreDraft(res.email, { withPlan: false });
-      newApplication();
+      startDetails(res.paidOrder, res.digilocker);
+    } else {
+      // Not paid yet: pay for the chosen plan.
+      setApplication(null);
+      setStep(plan ? "pay" : "plan");
     }
   }
 
-  function newApplication() {
+  // Opens the details form for the plan that was paid for (Aadhaar auto-fill re-used if verified).
+  function startDetails(order, verified = savedDigi) {
+    const type = order.membershipType;
     setApplication(null);
-    if (savedDigi && (!plan || config?.digilocker?.types?.includes(plan))) {
-      applyDigilocker(savedDigi);
-      setStep("details");
-      return;
+    setPlan(type);
+    if (verified && config?.digilocker?.types?.includes(type)) {
+      applyDigilocker(verified, type);
+    } else {
+      setDigi(null);
+      setForm((f) => ({ ...f, membershipType: type }));
     }
-    setForm((f) => ({ ...f, membershipType: plan, affiliated: plan === "STUDENT" ? "Yes" : f.affiliated }));
-    setStep(plan ? "details" : "plan");
+    setStep("details");
+  }
+
+  // After a rejection or withdrawal: fill the form again (no new payment if one is unused).
+  function newApplication() {
+    if (paidOrder) return startDetails(paidOrder);
+    setApplication(null);
+    setStep(plan ? "pay" : "plan");
   }
 
   // ---------- details ----------
@@ -310,7 +333,7 @@ export default function JoinPage() {
     e.preventDefault();
     setBanner("");
     setBusy(true);
-    const affiliated = form.membershipType === "STUDENT" || form.affiliated === "Yes";
+    const affiliated = form.affiliated === "Yes";
     const fd = new FormData();
     fd.append(
       "data",
@@ -326,6 +349,10 @@ export default function JoinPage() {
     } catch (err) {
       if (err instanceof ApiError && Object.keys(err.errors).length) setErrors(err.errors);
       if (err.code === "MEMBER_EXISTS") setExisting(true);
+      if (err.code === "PAYMENT_REQUIRED") {
+        setPaidOrder(null);
+        setStep("pay");
+      }
       if (err.code === "DIGILOCKER_EXPIRED") {
         setDigi(null);
         setSavedDigi(null);
@@ -352,14 +379,30 @@ export default function JoinPage() {
   }
 
   // ---------- payment ----------
+  // Pay first for the chosen plan; older approved applications pay for the application.
   async function pay() {
     setBanner("");
     setPayMessage(null);
     setBusy(true);
     try {
-      const res = await api("/join/application/checkout", { method: "POST", auth: "join" });
+      const res =
+        application?.status === "APPROVED"
+          ? await api("/join/application/checkout", { method: "POST", auth: "join" })
+          : await api("/join/checkout", { method: "POST", json: { membershipType: plan }, auth: "join" });
       setCheckout(res.checkout);
     } catch (err) {
+      if (err.code === "ALREADY_PAID") {
+        const res = await api("/join/application", { auth: "join" }).catch(() => null);
+        if (res?.paidOrder) {
+          setPaidOrder(res.paidOrder);
+          startDetails(res.paidOrder, res.digilocker || savedDigi);
+          return;
+        }
+      }
+      if (err.code === "MEMBER_EXISTS") {
+        setExisting(true);
+        setStep("email");
+      }
       setBanner(err.message);
     } finally {
       setBusy(false);
@@ -374,15 +417,22 @@ export default function JoinPage() {
       try {
         const res = await api(`/join/orders/${order.orderId}/confirm`, { method: "POST", json: { result }, auth: "join" });
         if (res.order.status === "PAID" && res.member) {
+          // Older flow: approved application paid -> member registered.
           setApplication(res.application);
           setMember(res.member);
           setStep("done");
+        } else if (res.order.status === "PAID" && res.paidOrder) {
+          // Pay-first flow: now fill in the details.
+          setPaidOrder(res.paidOrder);
+          startDetails(res.paidOrder);
+        } else if (res.order.status === "PAID") {
+          setPayMessage({ kind: "warning", text: "Your payment was received, but there is a problem with it. The membership office will contact you. Please do not pay again." });
         } else if (res.order.status === "FAILED") {
-          setPayMessage({ kind: "error", text: "The payment was not completed. Your application is saved — you can try again now." });
+          setPayMessage({ kind: "error", text: "The payment was not completed and no money was taken. You can try again now." });
         } else {
           setPayMessage({
             kind: "warning",
-            text: "We are waiting for the payment gateway to confirm your payment. You will receive an email with your ID card once it is confirmed. Please do not pay again.",
+            text: "We are waiting for the payment gateway to confirm your payment. Please do not pay again. Come back to this page and verify your email in a few minutes to fill in your details.",
           });
         }
       } catch (err) {
@@ -441,7 +491,7 @@ export default function JoinPage() {
           <PlanCards config={config} selected={plan} onSelect={choosePlan} />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <button type="button" className={buttonClass.ghost} onClick={() => setStep("email")}>
-              Already applied? Check your status or pay
+              Already paid or applied? Continue here
             </button>
             <button type="button" className={buttonClass.primary} disabled={!chosen} onClick={() => setStep("email")}>
               Continue <Icon name="arrowRight" className="h-4 w-4" />
@@ -501,18 +551,26 @@ export default function JoinPage() {
           <h2 className="mt-4 text-xl font-semibold text-slate-900">Application submitted</h2>
           <p className="mt-2 text-sm text-slate-600">
             Your application for <strong>{application.typeLabel}</strong>, submitted on {formatDate(application.createdAt)}, is being reviewed by the
-            Membership Section. You do not need to pay anything yet.
+            Membership Section.{application.paymentOrderId ? " Your payment has been received." : " You do not need to pay anything yet."}
           </p>
           <p className="mt-3 text-sm text-slate-600">
-            We will email <strong>{application.email}</strong> once it has been reviewed. If it is approved, the email will have a link to pay the
-            membership fee ({formatMoney(application.amount)}).
+            {application.paymentOrderId ? (
+              <>
+                Once it is approved, your membership number, ID card and payment receipt will be emailed to <strong>{application.email}</strong>.
+              </>
+            ) : (
+              <>
+                We will email <strong>{application.email}</strong> once it has been reviewed. If it is approved, the email will have a link to pay the
+                membership fee ({formatMoney(application.amount)}).
+              </>
+            )}
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-2">
             <Link to="/" className={buttonClass.primary} onClick={() => joinTokenStore.clear()}>
               Back to home
             </Link>
             <button type="button" className={buttonClass.secondary} disabled={busy} onClick={startOver}>
-              Withdraw and start a new application
+              {application.paymentOrderId ? "Withdraw and fill the form again" : "Withdraw and start a new application"}
             </button>
           </div>
         </Card>
@@ -523,7 +581,7 @@ export default function JoinPage() {
           <h2 className="text-lg font-semibold text-slate-900">Your application was not approved</h2>
           <p className="mt-2 text-sm text-slate-600">
             Your application for <strong>{application.typeLabel}</strong> submitted on {formatDate(application.createdAt)} was not approved
-            {application.reviewedAt ? ` on ${formatDate(application.reviewedAt)}` : ""}. No payment was taken.
+            {application.reviewedAt ? ` on ${formatDate(application.reviewedAt)}` : ""}.{paidOrder ? "" : " No payment was taken."}
           </p>
           {application.reviewNote && (
             <div className="mt-4">
@@ -532,7 +590,11 @@ export default function JoinPage() {
               </Alert>
             </div>
           )}
-          <p className="mt-4 text-sm text-slate-600">You are welcome to submit a new application with the correct information.</p>
+          <p className="mt-4 text-sm text-slate-600">
+            {paidOrder
+              ? `Your payment of ${formatMoney(paidOrder.amount)} is kept. Submit a new application with the correct information without paying again, or contact the membership office for a refund.`
+              : "You are welcome to submit a new application with the correct information."}
+          </p>
           <div className="mt-5 flex flex-wrap gap-2">
             <button type="button" className={buttonClass.primary} onClick={newApplication}>
               Start a new application
@@ -562,7 +624,7 @@ export default function JoinPage() {
               Fill the form manually instead
             </button>
           </div>
-          <p className="mt-4 text-xs text-slate-500">Both ways, your application is reviewed by the membership office before payment.</p>
+          <p className="mt-4 text-xs text-slate-500">Both ways, your application is reviewed by the membership office before your membership is issued.</p>
         </Card>
       )}
 
@@ -570,11 +632,13 @@ export default function JoinPage() {
         <form onSubmit={submitDetails} noValidate className="space-y-6">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm">
             <span>
-              Applying for <strong className="text-slate-900">{chosen?.label}</strong> · {formatMoney(chosen?.fee)}
+              Applying for <strong className="text-slate-900">{chosen?.label}</strong> · {formatMoney(paidOrder?.amount ?? chosen?.fee)}
             </span>
-            <button type="button" className={buttonClass.ghost} onClick={() => setStep("plan")}>
-              Change plan
-            </button>
+            {paidOrder && (
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-green-700">
+                <Icon name="check" className="h-4 w-4" /> Paid
+              </span>
+            )}
           </div>
 
           {digi && (
@@ -645,6 +709,57 @@ export default function JoinPage() {
             </button>
           </div>
         </form>
+      )}
+
+      {step === "pay" && !application && (
+        <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
+          <Card title="Your plan">
+            {chosen ? (
+              <>
+                <Details
+                  rows={[
+                    ["Membership type", chosen.label],
+                    ["Email (verified)", email],
+                    ["Validity", chosen.validityMonths ? `${chosen.validityMonths} months from the date of approval` : "Lifetime"],
+                  ]}
+                />
+                <div className="mt-4">
+                  <button type="button" className={buttonClass.ghost} onClick={() => setStep("plan")}>
+                    Change plan
+                  </button>
+                </div>
+              </>
+            ) : (
+              <p className="text-sm text-slate-600">Choose a plan first.</p>
+            )}
+            <p className="mt-5 border-t border-slate-100 pt-4 text-xs text-slate-500">
+              After paying, you fill in your details and upload your documents. The membership office then reviews your application; once it is
+              approved, your membership number, ID card and receipt are emailed to you. If it is not approved, your payment is refunded.
+            </p>
+          </Card>
+
+          <Card title="Payment">
+            <div className="space-y-4">
+              <div className="flex items-baseline justify-between">
+                <span className="text-sm text-slate-600">Amount</span>
+                <span className="text-2xl font-semibold tabular-nums text-slate-900">{formatMoney(chosen?.fee)}</span>
+              </div>
+              {payMessage && <Alert kind={payMessage.kind}>{payMessage.text}</Alert>}
+              {!config.onlinePayments.enabled ? (
+                <Alert kind="warning" title="Online payment is not available yet">
+                  Please contact the membership office{config.contact.email ? ` at ${config.contact.email}` : ""} to complete the payment.
+                </Alert>
+              ) : checkout ? (
+                <Checkout checkout={checkout} onResult={onResult} onCancel={onCancel} />
+              ) : (
+                <button type="button" className={`${buttonClass.primary} w-full`} disabled={busy || !chosen} onClick={pay}>
+                  {busy ? "Please wait…" : `Pay ${formatMoney(chosen?.fee)}`}
+                </button>
+              )}
+              <p className="text-xs text-slate-500">UPI, cards and net banking are accepted.</p>
+            </div>
+          </Card>
+        </div>
       )}
 
       {step === "pay" && application && (

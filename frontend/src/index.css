@@ -25,6 +25,46 @@ h3 {
   text-wrap: balance;
 }
 
+/* Admin portal: Tahoma throughout, justified body text */
+.admin-ui {
+  font-family: Tahoma, "Noto Sans Devanagari", Verdana, "Segoe UI", sans-serif;
+  font-feature-settings: normal;
+  letter-spacing: normal;
+  background: #f4f4f5;
+
+  /* Neutral, institutional palette for the admin area only (charcoal + greys).
+     The public site and ID card keep the navy brand colours. */
+  --color-brand-50: #f4f4f5;
+  --color-brand-100: #e4e4e7;
+  --color-brand-200: #d4d4d8;
+  --color-brand-500: #52525b;
+  --color-brand-600: #3f3f46;
+  --color-brand-700: #27272a;
+  --color-brand-800: #18181b;
+  --color-brand-900: #09090b;
+
+  /* Squarer corners */
+  --radius-md: 3px;
+  --radius-lg: 4px;
+}
+.admin-ui .shadow-xs,
+.admin-ui .shadow-xl {
+  box-shadow: none;
+}
+.admin-ui p,
+.admin-ui li,
+.admin-ui dd {
+  text-align: justify;
+  text-justify: inter-word;
+}
+/* Keep explicitly centred / right-aligned text as intended */
+.admin-ui .text-center {
+  text-align: center;
+}
+.admin-ui .text-right {
+  text-align: right;
+}
+
 :focus-visible {
   outline: 2px solid var(--color-brand-600);
   outline-offset: 2px;

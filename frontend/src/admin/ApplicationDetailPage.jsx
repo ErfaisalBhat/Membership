@@ -10,7 +10,6 @@ const DOC_LABELS = {
   photo: "Passport size photograph",
   signature: "Signature",
   idProof: "Valid ID card",
-  studentId: "Student ID card",
 };
 
 function RecordPayment({ application, config, onDone }) {
@@ -71,17 +70,20 @@ function RecordPayment({ application, config, onDone }) {
 const emailNote = (email) =>
   !email?.sent ? " The email to the applicant could not be sent." : email.simulated ? " (Email is in log mode, so nothing was actually sent.)" : " The applicant has been emailed.";
 
-function Approve({ application, onDone }) {
+// onRegistered(res): the applicant had paid online, so approving registered them.
+function Approve({ application, onDone, onRegistered }) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const paid = !!application.paymentOrderId;
 
   async function approve() {
     setBusy(true);
     setError("");
     try {
       const res = await api(`/admin/applications/${application._id}/approve`, { method: "POST" });
-      onDone(res.application, `Application approved.${emailNote(res.email)}`);
+      if (res.memberId) onRegistered(res);
+      else onDone(res.application, `Application approved.${emailNote(res.email)}`);
     } catch (err) {
       setError(err.message);
       setBusy(false);
@@ -91,14 +93,15 @@ function Approve({ application, onDone }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-600">
-        Check the details and documents. When you approve, the applicant is emailed a link to pay {formatMoney(application.amount)}. They become a member
-        and get their ID card once the payment is confirmed.
+        {paid
+          ? `Check the details and documents. The applicant has already paid ${formatMoney(application.amount)} online. When you approve, they become a member at once and get the welcome email with ID card and receipt.`
+          : `Check the details and documents. When you approve, the applicant is emailed a link to pay ${formatMoney(application.amount)}. They become a member and get their ID card once the payment is confirmed.`}
       </p>
       {error && <Alert>{error}</Alert>}
       {confirming ? (
         <div className="flex gap-2">
           <button type="button" className={buttonClass.primary} disabled={busy} onClick={approve}>
-            {busy ? "Approving…" : "Yes, approve"}
+            {busy ? "Approving…" : paid ? "Yes, approve and register" : "Yes, approve"}
           </button>
           <button type="button" className={buttonClass.secondary} onClick={() => setConfirming(false)}>
             Back
@@ -213,6 +216,12 @@ export default function ApplicationDetailPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // Registered as a member (approved after paying online, or paid offline): open the member.
+  const registered = (res) =>
+    navigate(`/admin/members/${res.memberId}`, {
+      state: { flash: `Registered with ID ${res.membershipId}.${res.email?.sent && !res.email.simulated ? " Welcome email sent." : ""}` },
+    });
+
   useEffect(() => {
     api(`/admin/applications/${id}`)
       .then(setData)
@@ -263,6 +272,9 @@ export default function ApplicationDetailPage() {
         {a.reviewedAt && ` · reviewed ${formatDate(a.reviewedAt)}`}
       </p>
 
+      {a.status === "PENDING" && a.paymentOrderId && (
+        <Alert kind="info">Paid online before applying. Approving registers the member straight away. Rejecting flags the payment for a refund under Payments.</Alert>
+      )}
       {a.status === "APPROVED" && (
         <Alert kind="info">
           Approved. The applicant has been asked to pay; they become a member as soon as the payment is confirmed. Approved applications that are not paid
@@ -306,7 +318,7 @@ export default function ApplicationDetailPage() {
                       ["Date of birth", formatDate(a.dob)],
                     ]),
                 ["Address", [addr.line1, addr.line2, addr.city, addr.state && `${addr.state} – ${addr.pincode}`].filter(Boolean).join(", ")],
-                ["Affiliation", a.affiliated ? [af.designation, af.course, af.semester && `Semester ${af.semester}`, af.department, af.institution, af.state].filter(Boolean).join(", ") : "Not affiliated"],
+                ["Affiliation", a.affiliated ? [af.designation, af.department, af.institution, af.state].filter(Boolean).join(", ") : "Not affiliated"],
                 ["Members directory", a.showInPublicList ? "Agreed to be listed" : "Not listed"],
                 ["Terms accepted", formatDate(a.termsAcceptedAt)],
               ]}
@@ -365,23 +377,17 @@ export default function ApplicationDetailPage() {
           <div className="space-y-6">
             {a.status === "PENDING" && (
               <Card title="Review">
-                <Approve application={a} onDone={updated} />
+                <Approve application={a} onDone={updated} onRegistered={registered} />
               </Card>
             )}
             <Card title="Reject">
               <Reject application={a} onDone={updated} />
             </Card>
-            <Card title="Paid offline?">
-              <RecordPayment
-                application={a}
-                config={config}
-                onDone={(res) =>
-                  navigate(`/admin/members/${res.memberId}`, {
-                    state: { flash: `Registered with ID ${res.membershipId}.${res.email?.sent && !res.email.simulated ? " Welcome email sent." : ""}` },
-                  })
-                }
-              />
-            </Card>
+            {!a.paymentOrderId && (
+              <Card title="Paid offline?">
+                <RecordPayment application={a} config={config} onDone={registered} />
+              </Card>
+            )}
             <Card title="Cancel">
               <CancelApplication application={a} onDone={(app) => updated(app, "Application cancelled.")} />
             </Card>

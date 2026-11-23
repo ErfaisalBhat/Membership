@@ -9,20 +9,22 @@ const { serializeApplication } = require("../members/serialize");
 const { createCode, checkCode, CODE_MINUTES } = require("../auth/otp");
 const { createSession, requireJoin, JOIN_SESSION_HOURS } = require("../auth/sessions");
 const { sendCodeEmail, sendApplicationReceivedEmail, sendNewApplicationAdminEmail, trySend } = require("../mail/mailer");
-const { startCheckout, confirmFromBrowser, publicOrder } = require("../payments/service");
+const { startCheckout, confirmFromBrowser, publicOrder, unusedPaidOrder } = require("../payments/service");
+const { MEMBERSHIP_TYPES } = require("../config/membership");
 const { memberUpload, pickFiles, checkFileContents, toStoredFile, removeUploaded, removeStoredFiles } = require("../documents/upload");
 const digilocker = require("../digilocker/service");
 const digilockerHealth = require("../digilocker/health");
 const { MESSAGES: DIGILOCKER_MESSAGES } = require("../digilocker/errors");
 const { DIGILOCKER_TYPES } = require("../config/membership");
 
-// Public sign-up:
+// Public sign-up (pay first):
 //   1. POST /otp       email -> 6-digit code by email (refused if already a member)
 //   2. POST /verify    code  -> join token (header X-Join-Token on the next calls)
-//   3. POST /application      form + documents -> PENDING application (waits for admin review)
-//   -- the admin approves it (APPROVED) and the applicant is emailed a link back here --
-//   4. POST /application/checkout             -> starts the online payment (APPROVED only)
-//   5. POST /orders/:id/confirm               -> browser reports the payment result
+//   3. POST /checkout  { membershipType } -> starts the online payment for the chosen plan
+//   4. POST /orders/:id/confirm          -> browser reports the payment result
+//   5. POST /application  form + documents -> PENDING application (needs the paid order)
+//   -- the admin approves it: the member is registered and the ID card emailed --
+// Older applications approved before payment still pay via POST /application/checkout.
 // The applicant sees the status of their application by verifying the same email again.
 
 const { OPEN_STATUSES } = Application;
@@ -62,6 +64,20 @@ async function latestApplication(email) {
   );
 }
 
+// The applicant's paid, not yet used payment, for the join page.
+async function paidOrderInfo(email) {
+  const o = await unusedPaidOrder(email);
+  if (!o) return null;
+  return {
+    _id: o._id,
+    orderNo: o.orderNo,
+    membershipType: o.membershipType,
+    typeLabel: MEMBERSHIP_TYPES[o.membershipType] ? MEMBERSHIP_TYPES[o.membershipType].label : o.membershipType,
+    amount: o.amount,
+    paidAt: o.paidAt,
+  };
+}
+
 async function applicationResponse(application) {
   if (!application) return { application: null, member: null };
   let member = null;
@@ -98,6 +114,7 @@ router.post("/verify", otpLimiter, async (req, res) => {
     email,
     application: latest && latest.status !== "PAID" ? serializeApplication(latest) : null,
     digilocker: await digilocker.latestVerified(email),
+    paidOrder: await paidOrderInfo(email),
   });
 });
 
@@ -108,10 +125,23 @@ router.get("/application", requireJoin, async (req, res) => {
     ...(await applicationResponse(await latestApplication(req.joinEmail))),
     email: req.joinEmail,
     digilocker: await digilocker.latestVerified(req.joinEmail),
+    paidOrder: await paidOrderInfo(req.joinEmail),
   });
 });
 
-// POST /api/join/application  (multipart: data=JSON, photo, signature, idProof, studentId)
+// POST /api/join/checkout { membershipType } — pay for the chosen plan, before the details.
+router.post("/checkout", requireJoin, async (req, res) => {
+  const membershipType = String((req.body && req.body.membershipType) || "");
+  if (!MEMBERSHIP_TYPES[membershipType]) return res.status(400).json({ message: "Choose a membership plan first." });  if (await Member.exists({ email: req.joinEmail })) return res.status(409).json(MEMBER_EXISTS);
+  if (await unusedPaidOrder(req.joinEmail)) {
+    return res.status(409).json({ code: "ALREADY_PAID", message: "You have already paid for your membership. Please fill in your details to continue." });
+  }
+  const pending = await Application.exists({ email: req.joinEmail, status: "PENDING" });
+  if (pending) return res.status(409).json({ message: "Your application is already being reviewed. You do not need to pay again." });
+  res.json({ checkout: await startCheckout({ purpose: "NEW", applicant: { name: req.joinEmail, email: req.joinEmail, membershipType } }) });
+});
+
+// POST /api/join/application  (multipart: data=JSON, photo, signature, idProof)
 router.post("/application", requireJoin, memberUpload, async (req, res) => {
   const files = pickFiles(req.files);
   let input;
@@ -126,9 +156,18 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
   }
   input.email = req.joinEmail; // always the verified address
 
+  // Pay first: the details are accepted only after the membership fee is paid, and the
+  // plan is the one that was paid for.
+  const paidOrder = await unusedPaidOrder(req.joinEmail);
+  if (!paidOrder) {
+    await removeUploaded(files);
+    return res.status(402).json({ code: "PAYMENT_REQUIRED", message: "Please pay the membership fee before filling in your details." });
+  }
+  input.membershipType = paidOrder.membershipType;
+
   // Filled from Aadhaar through DigiLocker: the locked fields always come from our own
   // verified record, never from what the browser sent.
-  // A student who already verified cannot switch back to typing these details by hand.
+  // An applicant who already verified cannot switch back to typing these details by hand.
   let verified = null;
   if (DIGILOCKER_TYPES.includes(input.membershipType)) {
     verified = await digilocker.findVerified(req.joinEmail, input.digilockerId);
@@ -172,14 +211,19 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
     ...data,
     documents: Object.fromEntries(Object.entries(files).map(([k, f]) => [k, toStoredFile(f)])),
     termsAcceptedAt: new Date(),
+    paymentOrderId: paidOrder._id,
   });
-  await trySend(() => sendApplicationReceivedEmail(application));
+  paidOrder.applicationId = application._id;
+  paidOrder.name = application.name;
+  if (paidOrder.failureReason.startsWith("Application ")) paidOrder.failureReason = ""; // resubmitted after a rejection
+  await paidOrder.save();
+  await trySend(() => sendApplicationReceivedEmail(application, { paid: true }));
   await trySend(() => sendNewApplicationAdminEmail(application));
   res.status(201).json(await applicationResponse(application));
 });
 
 // GET /api/join/digilocker/available -> { available } — asked before showing the DigiLocker
-// screen; when false (Cashfree down) the student goes straight to the manual form.
+// screen; when false (Cashfree down) the applicant goes straight to the manual form.
 router.get("/digilocker/available", async (req, res) => {
   res.json({ available: await digilockerHealth.isAvailable() });
 });
@@ -202,7 +246,7 @@ router.post("/digilocker/start", otpLimiter, requireJoin, async (req, res) => {
   }
 });
 
-// POST /api/join/digilocker/complete { verificationId } — the student is back from DigiLocker.
+// POST /api/join/digilocker/complete { verificationId } — the applicant is back from DigiLocker.
 // Always 200: { email, verified: true, prefill, locked, last4, verificationId }
 //          or { email, verified: false, kind, message } (then the form is filled by hand).
 router.post("/digilocker/complete", requireJoin, async (req, res) => {
@@ -229,12 +273,11 @@ router.post("/application/checkout", requireJoin, async (req, res) => {
 router.post("/orders/:id/confirm", requireJoin, async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).json({ message: "Payment not found." });
   const order = await PaymentOrder.findOne({ _id: req.params.id, purpose: "NEW" });
-  const application = order && (await Application.findById(order.applicationId));
-  if (!order || !application || application.email !== req.joinEmail) return res.status(404).json({ message: "Payment not found." });
+  if (!order || order.email !== req.joinEmail) return res.status(404).json({ message: "Payment not found." });
 
   const updated = await confirmFromBrowser(order, req.body && req.body.result);
-  const fresh = await Application.findById(application._id);
-  res.json({ order: publicOrder(updated), ...(await applicationResponse(fresh)) });
+  const fresh = updated.applicationId ? await Application.findById(updated.applicationId) : null;
+  res.json({ order: publicOrder(updated), ...(await applicationResponse(fresh)), paidOrder: await paidOrderInfo(req.joinEmail) });
 });
 
 module.exports = router;

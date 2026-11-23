@@ -11,7 +11,7 @@ const { todayIST, parseDateOnly } = require("../shared/dates");
 const { DOCUMENT_FIELDS, filePath, removeStoredFiles } = require("../documents/upload");
 const { sendCardEmail, sendApplicationApprovedEmail, sendApplicationRejectedEmail, trySend } = require("../mail/mailer");
 const { providerByName, paymentsProblem, activeProvider } = require("../payments/provider");
-const { createMemberFromApplication, confirmFromBrowser, serializeOrder } = require("../payments/service");
+const { createMemberFromApplication, registerPaidApplication, confirmFromBrowser, serializeOrder } = require("../payments/service");
 
 // Admin pages for online sign-ups and payments. Mounted at /api/admin.
 
@@ -118,14 +118,43 @@ async function deleteDocuments(application) {
   await removeStoredFiles(Object.values(docs).map((f) => f && f.filename));
 }
 
+// The online payment an application was paid with beforehand (pay-first flow), if any.
+const paidOrderOf = (application) => (application.paymentOrderId ? PaymentOrder.findById(application.paymentOrderId) : null);
+
+// Rejected or cancelled after paying: flag the payment so the admin refunds it
+// (it shows under Payments -> Needs attention). Cleared if the applicant resubmits.
+async function flagForRefund(application, what) {
+  const order = await paidOrderOf(application);
+  if (!order || order.status !== "PAID" || order.memberId) return false;
+  order.failureReason = `Application ${what}. Refund this payment, unless the applicant submits a new application.`;
+  await order.save();
+  return true;
+}
+
 // POST /api/admin/applications/:id/approve
-// The applicant is emailed a link to pay; the member is created once they pay.
+// Paid beforehand (pay-first flow): the member is registered now and the ID card emailed.
+// Older unpaid applications: the applicant is emailed a link to pay.
 router.post("/applications/:id/approve", async (req, res) => {
   const application = await loadById(Application, req.params.id, res, "Application");
   if (!application) return;
   if (application.status !== "PENDING") return res.status(400).json({ message: "Only applications waiting for review can be approved." });
   if (await Member.exists({ email: application.email })) {
     return res.status(409).json({ message: "A member with this email address already exists." });
+  }
+  if (application.paymentOrderId) {
+    const order = await paidOrderOf(application);
+    if (!order || order.status !== "PAID" || order.memberId) {
+      return res.status(400).json({ message: "The payment for this application was refunded or is no longer available, so it cannot be approved." });
+    }
+    application.reviewedAt = new Date();
+    application.reviewNote = "";
+    const { member, email } = await registerPaidApplication(application, order);
+    return res.json({
+      application: serializeApplication(application, { full: true }),
+      memberId: member._id,
+      membershipId: member.membershipId,
+      email,
+    });
   }
   application.status = "APPROVED";
   application.reviewedAt = new Date();
@@ -153,7 +182,8 @@ router.post("/applications/:id/reject", async (req, res) => {
     { applicationId: application._id, status: "CREATED" },
     { $set: { status: "FAILED", failureReason: "Closed: the application was rejected." } }
   );
-  const email = await trySend(() => sendApplicationRejectedEmail(application, reason));
+  const paid = await flagForRefund(application, "rejected");
+  const email = await trySend(() => sendApplicationRejectedEmail(application, reason, { paid }));
   res.json({ application: serializeApplication(application, { full: true }), email });
 });
 
@@ -163,6 +193,9 @@ router.post("/applications/:id/record-payment", async (req, res) => {
   const application = await loadById(Application, req.params.id, res, "Application");
   if (!application) return;
   if (!isOpen(application)) return res.status(400).json({ message: "Only applications waiting for review or payment can be registered." });
+  if (application.paymentOrderId) {
+    return res.status(400).json({ message: "This applicant has already paid online. Use Approve to register them." });
+  }
   if (await Member.exists({ email: application.email })) {
     return res.status(409).json({ message: "A member with this email address already exists." });
   }
@@ -190,6 +223,7 @@ router.post("/applications/:id/cancel", async (req, res) => {
   application.cancelReason = String((req.body && req.body.reason) || "Cancelled by the admin.").slice(0, 300);
   await application.save();
   await deleteDocuments(application);
+  await flagForRefund(application, "cancelled");
   res.json({ application: serializeApplication(application) });
 });
 
@@ -211,7 +245,26 @@ router.get("/payments", async (req, res) => {
     PaymentOrder.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
     PaymentOrder.countDocuments(filter),
   ]);
-  res.json({ items: items.map(serializeOrder), total, page, pages: Math.max(1, Math.ceil(total / limit)) });
+  // Flag orders whose member / application record no longer exists, so the page
+  // doesn't link to a "not found" screen.
+  const memberIds = items.map((o) => o.memberId).filter(Boolean);
+  const appIds = items.map((o) => o.applicationId).filter(Boolean);
+  const [members, apps] = await Promise.all([
+    Member.find({ _id: { $in: memberIds } }).select("_id").lean(),
+    Application.find({ _id: { $in: appIds } }).select("_id").lean(),
+  ]);
+  const haveMember = new Set(members.map((m) => String(m._id)));
+  const haveApp = new Set(apps.map((a) => String(a._id)));
+  res.json({
+    items: items.map((o) => ({
+      ...serializeOrder(o),
+      memberMissing: !!o.memberId && !haveMember.has(String(o.memberId)),
+      applicationMissing: !!o.applicationId && !haveApp.has(String(o.applicationId)),
+    })),
+    total,
+    page,
+    pages: Math.max(1, Math.ceil(total / limit)),
+  });
 });
 
 // POST /api/admin/payments/:id/check — ask the gateway again (e.g. a webhook was missed).

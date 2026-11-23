@@ -90,7 +90,6 @@ export default function MemberFormPage() {
       if (f.payment.amount === "" || Number(f.payment.amount) === oldFee) {
         next = setIn(next, "payment.amount", newFee ?? "");
       }
-      if (newType === "STUDENT") next.affiliated = "Yes";
       return next;
     });
     clearError("membershipType");
@@ -105,8 +104,7 @@ export default function MemberFormPage() {
     e.preventDefault();
     setBanner("");
     setSaving(true);
-    const affiliated = type === "STUDENT" || form.affiliated === "Yes";
-    const data = { ...form, affiliated: affiliated ? "Yes" : "No" };
+    const data = { ...form, affiliated: form.affiliated === "Yes" ? "Yes" : "No" };
     const fd = new FormData();
     fd.append("data", JSON.stringify(data));
     for (const [key, file] of Object.entries(files)) if (file) fd.append(key, file);

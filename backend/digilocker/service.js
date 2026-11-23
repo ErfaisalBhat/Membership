@@ -9,10 +9,10 @@ const health = require("./health");
 const { FRONTEND_URL, ORG_CODE } = require("../config/membership");
 
 // Aadhaar auto-fill for the join form:
-//   start()    -> URL of the DigiLocker consent page; DigiLocker sends the student back to
-//                 /join?type=STUDENT&dl=<verificationId>
+//   start()    -> URL of the DigiLocker consent page; DigiLocker sends the applicant back to
+//                 /join?type=<plan>&dl=<verificationId>
 //   complete() -> asks Cashfree for the Aadhaar details and returns them to fill the form
-// Whatever goes wrong, the student is told why and fills the form by hand instead.
+// Whatever goes wrong, the applicant is told why and fills the form by hand instead.
 
 const hasPhoto = (a) => !!(a.photo && a.photo.data && a.photo.data.length);
 
@@ -115,7 +115,7 @@ async function complete(email, verificationId) {
 }
 
 // For the form submission: this applicant's verified record (the given one, else their
-// latest), or null. Once a student is verified, their Aadhaar details are always used.
+// latest), or null. Once an applicant is verified, their Aadhaar details are always used.
 async function findVerified(email, verificationId) {
   if (verificationId) {
     const v = await DigilockerVerification.findOne({ verificationId: String(verificationId), email, status: "VERIFIED" });

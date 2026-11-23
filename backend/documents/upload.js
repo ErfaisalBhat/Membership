@@ -13,7 +13,6 @@ const DOCUMENT_FIELDS = {
   photo: { label: "Passport size photograph", types: IMAGE },
   signature: { label: "Signature", types: IMAGE },
   idProof: { label: "Valid ID card", types: IMAGE_OR_PDF },
-  studentId: { label: "Student ID card", types: IMAGE_OR_PDF },
 };
 
 const EXT = { "image/jpeg": ".jpg", "image/png": ".png", "application/pdf": ".pdf" };
@@ -31,7 +30,7 @@ const upload = multer({
     destination: UPLOAD_DIR,
     filename: (req, file, cb) => cb(null, crypto.randomBytes(16).toString("hex") + (EXT[file.mimetype] || "")),
   }),
-  limits: { fileSize: MAX_FILE_MB * 1024 * 1024, files: 4, fields: 5 },
+  limits: { fileSize: MAX_FILE_MB * 1024 * 1024, files: 3, fields: 5 },
   fileFilter: (req, file, cb) => {
     const field = DOCUMENT_FIELDS[file.fieldname];
     if (!field) return cb(new UploadError(`Unexpected file field "${file.fieldname}".`));

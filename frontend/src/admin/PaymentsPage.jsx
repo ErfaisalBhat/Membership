@@ -96,6 +96,11 @@ function OrderDetail({ order, onChange }) {
   return (
     <div className="space-y-4 bg-slate-50/60 px-4 py-4">
       {message && <Alert kind={message.kind}>{message.text}</Alert>}
+      {order.memberMissing && (
+        <Alert kind="warning">
+          The member record created by this payment no longer exists. It was removed from the database. The payment record is kept for your accounts.
+        </Alert>
+      )}
       {order.failureReason && <Alert kind={order.status === "PAID" || order.status === "CREATED" ? "warning" : "info"}>{order.failureReason}</Alert>}
       <Details
         rows={[
@@ -111,12 +116,12 @@ function OrderDetail({ order, onChange }) {
         ]}
       />
       <div className="flex flex-wrap gap-2">
-        {order.memberId && (
+        {order.memberId && !order.memberMissing && (
           <Link to={`/admin/members/${order.memberId}`} className={buttonClass.secondary}>
             Open member
           </Link>
         )}
-        {!order.memberId && order.applicationId && (
+        {(!order.memberId || order.memberMissing) && order.applicationId && !order.applicationMissing && (
           <Link to={`/admin/applications/${order.applicationId}`} className={buttonClass.secondary}>
             Open application
           </Link>
@@ -192,7 +197,7 @@ export default function PaymentsPage() {
     };
   }, [tab, purpose, search, page]);
 
-  const replaceOrder = (o) => setData((d) => ({ ...d, items: d.items.map((x) => (x._id === o._id ? o : x)) }));
+  const replaceOrder = (o) => setData((d) => ({ ...d, items: d.items.map((x) => (x._id === o._id ? { ...x, ...o } : x)) }));
 
   return (
     <div>

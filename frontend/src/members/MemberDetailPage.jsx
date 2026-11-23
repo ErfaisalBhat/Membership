@@ -13,7 +13,6 @@ const DOC_LABELS = {
   photo: "Passport size photograph",
   signature: "Signature",
   idProof: "Valid ID card",
-  studentId: "Student ID card",
 };
 
 export default function MemberDetailPage() {
@@ -176,8 +175,6 @@ export default function MemberDetailPage() {
                   ["University / Institution / Organization", af.institution],
                   ["Department", af.department],
                   ["Designation", af.designation],
-                  ["Course", af.course],
-                  ["Semester", af.semester],
                   ["State", af.state],
                 ]}
               />

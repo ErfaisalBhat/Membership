@@ -1,7 +1,7 @@
 const { digilockerProvider, digilockerProblem } = require("./provider");
 
 // Is DigiLocker usable right now? The join page asks before showing the DigiLocker screen,
-// so when Cashfree is down (or out of balance, or the keys/IP are refused) students go
+// so when Cashfree is down (or out of balance, or the keys/IP are refused) applicants go
 // straight to the manual form instead of clicking a button that cannot work.
 //
 // The answer is cached so Cashfree is asked at most once a minute, and a failed
@@ -36,7 +36,7 @@ async function isAvailable() {
     checking = check()
       .then((available) => {
         cached = { available, until: Date.now() + (available ? OK_CACHE_MS : DOWN_CACHE_MS) };
-        if (!available) console.warn("[DIGILOCKER] Cashfree not reachable — students get the manual form.");
+        if (!available) console.warn("[DIGILOCKER] Cashfree not reachable — applicants get the manual form.");
         return available;
       })
       .finally(() => {

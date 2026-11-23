@@ -6,7 +6,6 @@
 // validityMonths: null means the membership never expires (Life).
 
 const MEMBERSHIP_TYPES = {
-  STUDENT: { label: "Student Member", shortLabel: "Student", fee: 1000, regularFee: 2000, validityMonths: 12 },
   ANNUAL: { label: "Annual Member", shortLabel: "Annual", fee: 2000, regularFee: 3000, validityMonths: 12 },
   LIFE: { label: "Life Member", shortLabel: "Life", fee: 4000, regularFee: 5000, validityMonths: null },
   INSTITUTIONAL: { label: "Institutional Member", shortLabel: "Institutional", fee: 9000, regularFee: 10000, validityMonths: 12 },
@@ -32,7 +31,7 @@ const RENEWAL_WINDOW_DAYS = 60;
 const PENDING_APPLICATION_DAYS = 30;
 
 // Membership types that can fill the join form from Aadhaar through DigiLocker.
-const DIGILOCKER_TYPES = ["STUDENT"];
+const DIGILOCKER_TYPES = ["ANNUAL", "LIFE"];
 
 const ORG_NAME = process.env.ORG_NAME || "Membership Portal";
 const ORG_CODE = (process.env.ORG_CODE || "ORG").toUpperCase();

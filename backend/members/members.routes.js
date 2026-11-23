@@ -95,7 +95,7 @@ router.get("/export.csv", async (req, res) => {
     "Membership ID", "Name", "Contact Person", "Type", "Status", "Email", "WhatsApp",
     "Gender", "Date of Birth", "Date of Joining", "Valid Till", "Address Line 1", "Address Line 2",
     "City", "State", "PIN Code", "Affiliated", "Institution", "Department", "Designation",
-    "Course", "Semester", "Affiliation State", "Listed Publicly", "Total Paid", "Remarks",
+    "Affiliation State", "Listed Publicly", "Total Paid", "Remarks",
   ];
   const lines = [header.map(cell).join(",")];
   for (const m of members) {
@@ -107,7 +107,7 @@ router.get("/export.csv", async (req, res) => {
         m.membershipId, m.name, m.contactPerson, MEMBERSHIP_TYPES[m.membershipType]?.label || m.membershipType,
         effectiveStatus(m), m.email, m.whatsapp, m.gender, displayDate(m.dob), displayDate(m.joinDate),
         m.expiryDate ? displayDate(m.expiryDate) : "Lifetime", a.line1, a.line2, a.city, a.state, a.pincode,
-        m.affiliated ? "Yes" : "No", af.institution, af.department, af.designation, af.course, af.semester, af.state,
+        m.affiliated ? "Yes" : "No", af.institution, af.department, af.designation, af.state,
         m.showInPublicList ? "Yes" : "No", paid, m.remarks,
       ].map(cell).join(",")
     );
@@ -118,7 +118,7 @@ router.get("/export.csv", async (req, res) => {
   res.send("﻿" + lines.join("\r\n")); // BOM so Excel reads UTF-8 names correctly
 });
 
-// POST /api/members  (multipart: data=JSON, photo, signature, idProof, studentId)
+// POST /api/members  (multipart: data=JSON, photo, signature, idProof)
 router.post("/", memberUpload, async (req, res) => {
   const files = pickFiles(req.files);
   const input = parseFormData(req);
@@ -200,11 +200,6 @@ router.put("/:id", memberUpload, async (req, res) => {
   for (const [key, f] of Object.entries(files)) {
     if (member.documents[key] && member.documents[key].filename) replaced.push(member.documents[key].filename);
     member.documents[key] = toStoredFile(f);
-  }
-  // Student ID is only kept for Student members.
-  if (member.membershipType !== "STUDENT" && member.documents.studentId && member.documents.studentId.filename) {
-    replaced.push(member.documents.studentId.filename);
-    member.documents.studentId = undefined;
   }
   delete data.membershipType;
   member.set(data);
@@ -307,7 +302,7 @@ router.post("/:id/send-card", async (req, res) => {
   res.json({ message: "ID card emailed.", email });
 });
 
-// GET /api/members/:id/files/:kind  (photo | signature | idProof | studentId)
+// GET /api/members/:id/files/:kind  (photo | signature | idProof)
 router.get("/:id/files/:kind", async (req, res) => {
   if (!DOCUMENT_FIELDS[req.params.kind]) return res.status(404).json({ message: "Unknown document." });
   const member = await loadMember(req, res);

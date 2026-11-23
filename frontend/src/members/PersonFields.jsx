@@ -11,7 +11,6 @@ const DOCS = {
   photo: { label: "Passport size photograph", accept: "image/jpeg,image/png", hint: "JPG or PNG, up to 5 MB. Printed on the ID card." },
   signature: { label: "Signature", accept: "image/jpeg,image/png", hint: "JPG or PNG, up to 5 MB. Printed on the ID card." },
   idProof: { label: "Valid ID card", accept: "image/jpeg,image/png,application/pdf", hint: "JPG, PNG or PDF, up to 5 MB." },
-  studentId: { label: "Student ID card", accept: "image/jpeg,image/png,application/pdf", hint: "JPG, PNG or PDF, up to 5 MB." },
 };
 
 export default function PersonFields({
@@ -35,9 +34,8 @@ export default function PersonFields({
   const viaAadhaar = aadhaarVerified || !!form.aadhaarVerified;
   const lineMax = viaAadhaar ? 100 : 30;
   const type = form.membershipType;
-  const isStudent = type === "STUDENT";
   const isInstitution = type === "INSTITUTIONAL";
-  const affiliated = isStudent || form.affiliated === "Yes";
+  const affiliated = form.affiliated === "Yes";
 
   // Called as functions (not components) so inputs keep focus while typing.
   const text = (path, label, { required = true, type: inputType = "text", hint, maxLength, placeholder, autoComplete, className, inputMode } = {}) => {
@@ -151,22 +149,15 @@ export default function PersonFields({
       </Section>
 
       <Section title="Institution of affiliation">
-        <Field label="Are you affiliated to any institute?" htmlFor="affiliated" required hint={isStudent ? "Student members must be affiliated." : undefined}>
-          <select id="affiliated" className={inputClass()} value={affiliated ? "Yes" : "No"} disabled={isStudent} onChange={(e) => set("affiliated", e.target.value)}>
+        <Field label="Are you affiliated to any institute?" htmlFor="affiliated" required>
+          <select id="affiliated" className={inputClass()} value={affiliated ? "Yes" : "No"} onChange={(e) => set("affiliated", e.target.value)}>
             <option value="No">No</option>
             <option value="Yes">Yes</option>
           </select>
         </Field>
         {affiliated && (
           <>
-            {isStudent ? (
-              <>
-                {text("affiliation.course", "Course")}
-                {text("affiliation.semester", "Semester")}
-              </>
-            ) : (
-              text("affiliation.designation", "Designation")
-            )}
+            {text("affiliation.designation", "Designation")}
             {text("affiliation.department", "Department")}
             {text("affiliation.institution", "University / Institution / Organization", { className: "sm:col-span-2" })}
             {select("affiliation.state", "State", INDIAN_STATES)}
@@ -187,7 +178,6 @@ export default function PersonFields({
             {fileField("idProof")}
           </>
         )}
-        {isStudent && fileField("studentId")}
         {!viaAadhaar && form.idProofType === "Aadhaar" && (
           <p className="text-xs text-amber-700 sm:col-span-2">
             For Aadhaar, please upload a masked copy (only the last 4 digits visible), as UIDAI recommends.

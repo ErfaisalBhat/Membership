@@ -98,6 +98,7 @@ function serializeApplication(a, { full = false } = {}) {
     whatsapp: o.whatsapp,
     createdAt: o.createdAt,
     memberId: o.memberId,
+    paymentOrderId: o.paymentOrderId || null,
     cancelReason: o.cancelReason || "",
     reviewedAt: o.reviewedAt || null,
     reviewNote: o.reviewNote || "",
