@@ -2,6 +2,7 @@ const express = require("express");
 const PaymentOrder = require("./PaymentOrder");
 const { providerByName } = require("./provider");
 const { activateOrder, failOrder } = require("./service");
+const { recordWebhookPayment } = require("./zohoPage");
 
 // POST /api/payments/webhook/:provider  (e.g. /api/payments/webhook/zoho)
 //
@@ -23,11 +24,17 @@ router.post("/:provider", express.raw({ type: "*/*", limit: "1mb" }), async (req
     return res.status(400).json({ message: "Invalid webhook." });
   }
   res.json({ received: true });
-  if (!event || !event.sessionId) return;
+  if (!event) return;
 
   try {
+    // Zoho payment page payments: kept so the payment ID applicants enter can be checked.
+    if (event.zohoPayment) await recordWebhookPayment(event.zohoPayment, { liveMode: event.liveMode });
+    if (!event.sessionId) return;
     const order = await PaymentOrder.findOne({ provider: provider.name, providerSessionId: event.sessionId });
-    if (!order) return console.error(`[WEBHOOK ${provider.name}] No order for session ${event.sessionId}`);
+    if (!order) return; // e.g. a payment page payment (no order on this site)
+    if (event.status === "PAID" && event.amount !== undefined && Math.abs(event.amount - order.amount) > 0.001) {
+      return console.error(`[WEBHOOK ${provider.name}] ${order.orderNo}: paid ${event.amount}, expected ${order.amount}. Not activated.`);
+    }
     if (event.status === "PAID") await activateOrder(order._id, event);
     else if (event.status === "FAILED") await failOrder(order._id, event.reason);
   } catch (err) {

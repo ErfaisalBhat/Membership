@@ -75,7 +75,8 @@ function Approve({ application, onDone, onRegistered }) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const paid = !!application.paymentOrderId;
+  const paid = !!application.paymentOrderId || !!application.paymentReference;
+  const unverifiedPage = !!application.paymentReference && !application.paymentVerified;
 
   async function approve() {
     setBusy(true);
@@ -93,7 +94,9 @@ function Approve({ application, onDone, onRegistered }) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-slate-600">
-        {paid
+        {unverifiedPage
+          ? `Zoho has not confirmed this payment yet. Check the Payment ID in your Zoho Payments dashboard before approving. When you approve, the applicant becomes a member at once and gets the welcome email with ID card and receipt.`
+          : paid
           ? `Check the details and documents. The applicant has already paid ${formatMoney(application.amount)} online. When you approve, they become a member at once and get the welcome email with ID card and receipt.`
           : `Check the details and documents. When you approve, the applicant is emailed a link to pay ${formatMoney(application.amount)}. They become a member and get their ID card once the payment is confirmed.`}
       </p>
@@ -118,6 +121,7 @@ function Approve({ application, onDone, onRegistered }) {
 
 function Reject({ application, onDone }) {
   const [reason, setReason] = useState("");
+  const [paymentNotFound, setPaymentNotFound] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -126,7 +130,7 @@ function Reject({ application, onDone }) {
     setBusy(true);
     setError("");
     try {
-      const res = await api(`/admin/applications/${application._id}/reject`, { method: "POST", json: { reason } });
+      const res = await api(`/admin/applications/${application._id}/reject`, { method: "POST", json: { reason, paymentNotFound } });
       onDone(res.application, `Application rejected.${emailNote(res.email)}`);
     } catch (err) {
       setError(err.message);
@@ -140,6 +144,12 @@ function Reject({ application, onDone }) {
       <Field label="Reason" htmlFor="r-reason" required hint="Sent to the applicant. For example: the ID proof is not readable.">
         <textarea id="r-reason" rows={3} maxLength={500} className={inputClass()} value={reason} onChange={(e) => setReason(e.target.value)} />
       </Field>
+      {application.paymentReference && (
+        <label className="flex items-start gap-2 text-sm text-slate-700">
+          <input type="checkbox" className="mt-0.5 h-4 w-4" checked={paymentNotFound} onChange={(e) => setPaymentNotFound(e.target.checked)} />
+          <span>The payment was not found in Zoho (the applicant cannot re-use this Payment ID).</span>
+        </label>
+      )}
       {confirming ? (
         <div className="flex gap-2">
           <button type="button" className={buttonClass.danger} disabled={busy} onClick={reject}>
@@ -275,6 +285,13 @@ export default function ApplicationDetailPage() {
       {a.status === "PENDING" && a.paymentOrderId && (
         <Alert kind="info">Paid online. Approving registers the member straight away. Rejecting flags the payment for a refund under Payments.</Alert>
       )}
+      {a.paymentReference && ["PENDING", "APPROVED"].includes(a.status) && (
+        <Alert kind={a.paymentVerified ? "success" : "warning"} title={`Zoho Payment ID: ${a.paymentReference}`}>
+          {a.paymentVerified
+            ? `${a.paymentNote} Approving registers the member straight away.`
+            : `${a.paymentNote || "Not confirmed by Zoho yet."} Paid on the Zoho payment page${a.paymentReportedAt ? ` (reported ${formatDate(a.paymentReportedAt)})` : ""}. Check it in your Zoho Payments dashboard before approving.`}
+        </Alert>
+      )}
       {a.status === "UNPAID" && (
         <Alert kind="info">
           The applicant has filled in the details but has not paid yet. It comes up for review once paid. Unpaid applications are cancelled automatically
@@ -389,7 +406,7 @@ export default function ApplicationDetailPage() {
             <Card title="Reject">
               <Reject application={a} onDone={updated} />
             </Card>
-            {!a.paymentOrderId && (
+            {!a.paymentOrderId && !a.paymentReference && (
               <Card title="Paid offline?">
                 <RecordPayment application={a} config={config} onDone={registered} />
               </Card>

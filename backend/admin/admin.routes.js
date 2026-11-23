@@ -3,6 +3,9 @@ const mongoose = require("mongoose");
 const Application = require("../join/Application");
 const Member = require("../members/Member");
 const PaymentOrder = require("../payments/PaymentOrder");
+const ZohoPayment = require("../payments/ZohoPayment");
+const { referenceRegex, verifyApplication } = require("../payments/zohoPage");
+const { MEMBERSHIP_TYPES } = require("../config/membership");
 const { requireAdmin } = require("../auth/requireAdmin");
 const { validatePayment } = require("../members/validateMember");
 const { serializeApplication } = require("../members/serialize");
@@ -93,6 +96,10 @@ router.get("/applications", async (req, res) => {
 router.get("/applications/:id", async (req, res) => {
   const application = await loadById(Application, req.params.id, res, "Application");
   if (!application) return;
+  // Zoho payment page: check again in case Zoho's webhook arrived after the applicant submitted.
+  if (application.status === "PENDING" && application.paymentReference && !application.paymentVerified) {
+    await verifyApplication(application);
+  }
   const orders = await PaymentOrder.find({ applicationId: application._id }).sort({ createdAt: -1 }).lean();
   res.json({ application: serializeApplication(application, { full: true }), orders: orders.map(serializeOrder) });
 });
@@ -156,6 +163,21 @@ router.post("/applications/:id/approve", async (req, res) => {
       email,
     });
   }
+  if (application.paymentReference) {
+    // Paid on the Zoho payment page (verified by the webhook, or checked by the admin in Zoho).
+    application.reviewedAt = new Date();
+    application.reviewNote = "";
+    const { member, entry } = await createMemberFromApplication(application, {
+      amount: MEMBERSHIP_TYPES[application.membershipType].fee,
+      mode: "Online",
+      reference: `Zoho ${application.paymentReference}`.slice(0, 100),
+      date: todayIST(),
+      source: "OFFLINE",
+    });
+    await ZohoPayment.updateOne({ paymentId: referenceRegex(application.paymentReference) }, { $set: { applicationId: application._id } });
+    const email = await trySend(() => sendCardEmail(member, "welcome", { payment: entry }));
+    return res.json({ application: serializeApplication(application, { full: true }), memberId: member._id, membershipId: member.membershipId, email });
+  }
   application.status = "APPROVED";
   application.reviewedAt = new Date();
   application.reviewNote = "";
@@ -176,13 +198,18 @@ router.post("/applications/:id/reject", async (req, res) => {
   application.status = "REJECTED";
   application.reviewedAt = new Date();
   application.reviewNote = reason;
+  // The Zoho payment ID is not genuine: it is not carried over to a new application.
+  if (req.body && req.body.paymentNotFound && application.paymentReference) {
+    application.invalidPaymentReference = application.paymentReference;
+    application.paymentReference = "";
+  }
   await application.save();
   await deleteDocuments(application);
   await PaymentOrder.updateMany(
     { applicationId: application._id, status: "CREATED" },
     { $set: { status: "FAILED", failureReason: "Closed: the application was rejected." } }
   );
-  const paid = await flagForRefund(application, "rejected");
+  const paid = (await flagForRefund(application, "rejected")) || !!application.paymentReference;
   const email = await trySend(() => sendApplicationRejectedEmail(application, reason, { paid }));
   res.json({ application: serializeApplication(application, { full: true }), email });
 });

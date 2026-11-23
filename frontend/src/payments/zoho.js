@@ -1,36 +1,67 @@
-// Zoho Payments checkout — TO BE CONNECTED.
+// Zoho Payments checkout widget.
 //
 // `checkout` comes from the backend (backend/payments/providers/zoho.js createCheckout):
-//   { orderId, orderNo, amount, currency, name, email, purpose, client: { ...what createCheckout returned } }
+//   { orderId, orderNo, amount, currency, name, email, client: { account_id, api_key,
+//     payments_session_id, is_test_mode, business, description } }
 //
-// Return whatever the backend's verifyPayment(order, result) needs, e.g. { payment_id }.
-// Throw an Error with code "widget_closed" if the person closed the widget without paying.
-//
-// Sketch from the Zoho Payments docs (load https://static.zohocdn.com/zpay/zpay-js/v1/zpayments.js first,
-// and allow that script in the Content-Security-Policy in backend/server.js):
-//
-//   const instance = new window.ZPayments({
-//     account_id: checkout.client.account_id,
-//     domain: "IN",
-//     otherOptions: { api_key: checkout.client.api_key },
-//   });
-//   try {
-//     const data = await instance.requestPaymentMethod({
-//       amount: String(checkout.amount),
-//       currency_code: "INR",
-//       payments_session_id: checkout.client.payments_session_id,
-//       currency_symbol: "₹",
-//       business: "<organization name>",
-//       description: "Membership fee",
-//       invoice_number: checkout.orderNo,
-//       address: { name: checkout.name, email: checkout.email },
-//     });
-//     return { payment_id: data.payment_id };
-//   } finally {
-//     await instance.close();
-//   }
+// Resolves with { payment_id } for the backend to verify with Zoho. Rejects with
+// code "widget_closed" when the person closes the window without paying.
+
+const SCRIPT = "https://static.zohocdn.com/zpay/zpay-js/v1/zpayments.js";
+let loading = null;
+
+function loadScript() {
+  if (window.ZPayments) return Promise.resolve();
+  if (!loading) {
+    loading = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = SCRIPT;
+      s.async = true;
+      s.onload = () => resolve();
+      s.onerror = () => {
+        loading = null;
+        reject(new Error("The payment window could not be loaded. Check your internet connection and try again."));
+      };
+      document.head.appendChild(s);
+    });
+  }
+  return loading;
+}
 
 export async function payWithZoho(checkout) {
-  void checkout;
-  throw new Error("Zoho Payments is not connected yet (frontend/src/payments/zoho.js).");
+  await loadScript();
+  const c = checkout.client;
+  const instance = new window.ZPayments({
+    account_id: c.account_id,
+    domain: "IN",
+    otherOptions: { api_key: c.api_key, ...(c.is_test_mode ? { is_test_mode: true } : {}) },
+  });
+  try {
+    const data = await instance.requestPaymentMethod({
+      amount: Number(checkout.amount).toFixed(2),
+      currency_code: checkout.currency || "INR",
+      currency_symbol: "₹",
+      payments_session_id: c.payments_session_id,
+      business: c.business,
+      description: c.description,
+      invoice_number: checkout.orderNo,
+      address: { name: checkout.name, email: checkout.email },
+    });
+    return { payment_id: data && data.payment_id };
+  } catch (err) {
+    if (err && err.code === "widget_closed") {
+      const closed = new Error("Payment window closed.");
+      closed.code = "widget_closed";
+      throw closed;
+    }
+    // Expired session etc.: the backend still checks the session, in case it was paid.
+    if (err && (err.code === "session_expired" || err.code === "invalid_payment_session")) return {};
+    throw new Error((err && err.message) || "The payment could not be completed.");
+  } finally {
+    try {
+      await instance.close();
+    } catch {
+      /* already closed */
+    }
+  }
 }

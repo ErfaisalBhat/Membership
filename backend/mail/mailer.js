@@ -336,6 +336,7 @@ function applicationRows(application) {
     ["Membership Type", type ? type.label : application.membershipType],
     ["Fee", type ? `Rs. ${type.fee}` : ""],
     ["Date of Application", dottedDate(application.createdAt || new Date())],
+    ...(application.paymentReference ? [["Zoho Payment ID", application.paymentReference]] : []),
   ];
 }
 
@@ -348,11 +349,15 @@ async function sendApplicationReceivedEmail(application, { paid = false } = {}) 
     title: "Membership Application Received",
     greeting: greetingFor(application),
     blocks: [
-      p(`Thank you for applying for membership of ${ORG_NAME}. We have received your ${paid ? "payment, " : ""}application and documents.`),
+      p(
+        `Thank you for applying for membership of ${ORG_NAME}. We have received your ${
+          application.paymentReference ? "application, documents and payment details" : `${paid ? "payment, " : ""}application and documents`
+        }.`
+      ),
       table(applicationRows(application)),
       p(
         paid
-          ? "Your application will now be reviewed by the Membership Section. Once it is approved, your membership number, ID card and payment receipt will be emailed to you."
+          ? `Your ${application.paymentReference ? "payment will be checked and your " : ""}application will now be reviewed by the Membership Section. Once it is approved, your membership number, ID card and payment receipt will be emailed to you.`
           : "Your application will now be reviewed by the Membership Section. You do not need to pay anything yet. We will email you once it has been reviewed; if it is approved, the email will have a link to pay the membership fee online."
       ),
       contactLine(),

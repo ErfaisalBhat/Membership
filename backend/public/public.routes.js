@@ -13,6 +13,7 @@ const {
   RENEWAL_WINDOW_DAYS,
   PENDING_APPLICATION_DAYS,
   DIGILOCKER_TYPES,
+  PAYMENT_PAGES,
 } = require("../config/membership");
 const content = require("../config/content");
 const { activeProvider, paymentsProblem } = require("../payments/provider");
@@ -43,6 +44,7 @@ router.get("/config", (req, res) => {
       enabled: !paymentsProblem(),
       provider: provider && !paymentsProblem() ? provider.name : "",
     },
+    paymentPages: PAYMENT_PAGES, // Zoho payment page per plan, used when online payments are off
     digilocker: {
       enabled: !digilockerProblem(),
       types: DIGILOCKER_TYPES,

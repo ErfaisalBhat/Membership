@@ -33,6 +33,21 @@ const PENDING_APPLICATION_DAYS = 30;
 // Membership types that can fill the join form from Aadhaar through DigiLocker.
 const DIGILOCKER_TYPES = ["ANNUAL", "LIFE"];
 
+// Zoho Payments "payment pages": one page per plan, each with its fee fixed, e.g.
+// ZOHO_PAYMENT_PAGE_ANNUAL=https://... Applicants pay there and enter the Zoho payment ID,
+// which the webhook confirms. Used when the automatic gateway (PAYMENT_PROVIDER) is off.
+// The first https:// link in the value, so the link alone, the <iframe> embed code or a piece
+// of it (with quotes, style="..." etc.) all work.
+function pageLink(value) {
+  const m = String(value || "").match(/https:\/\/[^\s"'<>]+/i);
+  return m ? m[0] : "";
+}
+const PAYMENT_PAGES = Object.fromEntries(
+  Object.keys(MEMBERSHIP_TYPES)
+    .map((key) => [key, pageLink(process.env[`ZOHO_PAYMENT_PAGE_${key}`])])
+    .filter(([, url]) => url)
+);
+
 const ORG_NAME = process.env.ORG_NAME || "Membership Portal";
 const ORG_CODE = (process.env.ORG_CODE || "ORG").toUpperCase();
 const FRONTEND_URL = (process.env.FRONTEND_URL || "http://localhost:5174").replace(/\/+$/, "");
@@ -69,6 +84,7 @@ module.exports = {
   RENEWAL_WINDOW_DAYS,
   PENDING_APPLICATION_DAYS,
   DIGILOCKER_TYPES,
+  PAYMENT_PAGES,
   ORG_NAME,
   ORG_CODE,
   FRONTEND_URL,

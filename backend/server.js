@@ -28,11 +28,11 @@ app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
-        "img-src": ["'self'", "data:", "blob:"],
-        "frame-src": ["'self'", "blob:"],
-        // When you add the Zoho checkout widget, allow its script and frames here, e.g.
-        // "script-src": ["'self'", "https://static.zohocdn.com"],
-        // and add the Zoho domains to "frame-src" and "connect-src".
+        // Zoho Payments checkout widget: its script, payment window (frame) and API calls.
+        "script-src": ["'self'", "https://static.zohocdn.com", "https://*.zohocdn.com"],
+        "img-src": ["'self'", "data:", "blob:", "https://*.zohocdn.com", "https://*.zoho.in"],
+        "frame-src": ["'self'", "blob:", "https://*.zoho.in", "https://*.zohocdn.com"],
+        "connect-src": ["'self'", "https://*.zoho.in", "https://*.zohocdn.com"],
         // On when the site is served over HTTPS (FRONTEND_URL starts with https://), off locally.
         "upgrade-insecure-requests": FRONTEND_URL.startsWith("https://") ? [] : null,
       },
