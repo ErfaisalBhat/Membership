@@ -52,6 +52,18 @@ const personFields = {
 
   showInPublicList: { type: Boolean, default: false },
 
+  // Institutional only: the organisation's PAN (never a personal PAN). verified = checked
+  // with the Income Tax records (Cashfree) on the join form; the name then came from there.
+  pan: {
+    number: { type: String, default: "" },
+    verified: { type: Boolean, default: false },
+    verifiedAt: { type: Date, default: null },
+    registeredName: { type: String, default: "" },
+    panType: { type: String, default: "" },
+    verificationId: { type: String, default: "" },
+    provider: { type: String, default: "" },
+  },
+
   // Identity checked against Aadhaar through DigiLocker on the join form.
   // Only the last 4 digits of the Aadhaar number are ever stored.
   aadhaar: {

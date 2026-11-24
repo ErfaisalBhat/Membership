@@ -1,6 +1,9 @@
 const { MEMBERSHIP_TYPES, GENDERS, ID_PROOF_TYPES, PAYMENT_MODES } = require("../config/membership");
 const { parseDateOnly, todayIST, ageOn } = require("../shared/dates");
 const { AADHAAR_LINE_MAX } = require("../digilocker/aadhaar");
+const { normalizePan, panProblem, holderType } = require("../pan/pan");
+
+const EMPTY_PAN = { number: "", verified: false, verifiedAt: null, registeredName: "", panType: "", verificationId: "", provider: "" };
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PINCODE_RE = /^[1-9]\d{5}$/;
@@ -127,8 +130,19 @@ function validateMember(input, { files = {}, existing = null, mode = "admin", aa
     data.contactPerson = s(input.contactPerson);
     required(errors, "contactPerson", data.contactPerson, "Name of the authorized contact person is required.");
     Object.assign(data, { motherName: "", fatherName: "", gender: "", dob: null });
+
+    // Organisational PAN only. An unchanged PAN keeps its verification; a new one is unverified
+    // (the join route marks it verified when it came from a PAN check).
+    const number = normalizePan(input.pan);
+    const old = existing && existing.pan ? (existing.pan.toObject ? existing.pan.toObject() : existing.pan) : null;
+    // Institutions added before PAN was asked for can still be edited without one.
+    const panOptional = !isNew && !(old && old.number) && !number;
+    const panError = panOptional ? "" : panProblem(number);
+    if (panError) errors.pan = panError;
+    data.pan = old && old.number === number ? { ...EMPTY_PAN, ...old } : { ...EMPTY_PAN, number, panType: number.length === 10 ? holderType(number) : "" };
   } else {
     data.contactPerson = "";
+    data.pan = { ...EMPTY_PAN };
     data.motherName = s(input.motherName);
     required(errors, "motherName", data.motherName, "Mother's name is required.");
     data.fatherName = s(input.fatherName);

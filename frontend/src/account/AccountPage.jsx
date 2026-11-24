@@ -339,7 +339,6 @@ function Dashboard() {
                       </td>
                       <td className="whitespace-nowrap px-5 py-3 text-right tabular-nums">
                         {formatMoney(p.amount)}
-                        {p.refunded && <div className="text-xs text-violet-700">Refunded</div>}
                       </td>
                       <td className="px-5 py-3">
                         {p.receiptNo ? (
@@ -383,7 +382,9 @@ function Dashboard() {
                   rows={[
                     ["Email", member.email],
                     ["Number", member.whatsapp],
-                    ...(isInstitution ? [["Authorized contact person", member.contactPerson]] : [["Date of birth", formatDate(member.dob)]]),
+                    ...(isInstitution
+                      ? [["Authorized contact person", member.contactPerson], ...(member.pan?.number ? [["PAN", member.pan.number]] : [])]
+                      : [["Date of birth", formatDate(member.dob)]]),
                     ["Address", [a.line1, a.line2, a.city, a.state && `${a.state} – ${a.pincode}`].filter(Boolean).join(", ")],
                     ["Affiliation", member.affiliated ? [af.designation, af.department, af.institution].filter(Boolean).join(", ") : "Not affiliated"],
                     ["Members directory", member.showInPublicList ? "Listed" : "Not listed"],

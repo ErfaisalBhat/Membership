@@ -7,8 +7,8 @@ const { sendApplicationReceivedEmail, sendNewApplicationAdminEmail, trySend } = 
 //
 // Zoho calls the webhook for every payment; it is stored in ZohoPayment and matched to the
 // applicant's application by email: the application then goes to the admin for review, marked
-// "verified by Zoho". If Zoho's message does not come (or another email was used on the page),
-// the applicant clicks "I have completed the payment" and the admin checks it in Zoho.
+// "verified by Zoho". "I have completed the payment" only checks for such a payment again: an
+// application never goes for review until Zoho has reported the payment.
 
 const pick = (...values) => values.find((v) => v !== undefined && v !== null && v !== "") || "";
 
@@ -103,4 +103,16 @@ async function checkReference(reference, application) {
   return { verified: true, note: `Verified by Zoho: Rs. ${payment.amount}${payment.method ? ` by ${payment.method}` : ""}.`, payment };
 }
 
-module.exports = { recordWebhookPayment, verifyApplication, referenceRegex };
+// "I have completed the payment": links a payment Zoho has already reported for this email
+// (right amount, not used elsewhere) and sends the application for review. Nothing changes
+// when there is none. Returns { verified, note }.
+async function confirmPagePayment(application) {
+  const found = await unlinkedPaymentFor(application);
+  if (!found) return { verified: false, note: "Zoho has not reported a payment yet." };
+  const result = await checkReference(found.paymentId, application);
+  if (!result.verified) return result;
+  await attachPayment(application, found);
+  return result;
+}
+
+module.exports = { recordWebhookPayment, verifyApplication, confirmPagePayment, referenceRegex };

@@ -25,6 +25,13 @@ h3 {
   text-wrap: balance;
 }
 
+/* Public home page: Tahoma, like the admin portal */
+.home-ui {
+  font-family: Tahoma, "Noto Sans Devanagari", Verdana, "Segoe UI", sans-serif;
+  font-feature-settings: normal;
+  letter-spacing: normal;
+}
+
 /* Admin portal: Tahoma throughout, justified body text */
 .admin-ui {
   font-family: Tahoma, "Noto Sans Devanagari", Verdana, "Segoe UI", sans-serif;

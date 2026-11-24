@@ -48,7 +48,6 @@ function serializeOwnMember(member) {
     periodFrom: p.periodFrom,
     periodTo: p.periodTo,
     receiptNo: p.receiptNo,
-    refunded: p.refunded,
   }));
   return o;
 }

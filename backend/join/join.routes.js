@@ -12,11 +12,12 @@ const { sendCodeEmail, sendApplicationReceivedEmail, sendNewApplicationAdminEmai
 const { startCheckout, confirmFromBrowser, publicOrder, unusedPaidOrder } = require("../payments/service");
 const { MEMBERSHIP_TYPES, PAYMENT_PAGES } = require("../config/membership");
 const { memberUpload, pickFiles, checkFileContents, toStoredFile, removeUploaded, removeStoredFiles } = require("../documents/upload");
-const { verifyApplication } = require("../payments/zohoPage");
+const { verifyApplication, confirmPagePayment } = require("../payments/zohoPage");
 const digilocker = require("../digilocker/service");
 const digilockerHealth = require("../digilocker/health");
 const { MESSAGES: DIGILOCKER_MESSAGES } = require("../digilocker/errors");
 const { DIGILOCKER_TYPES } = require("../config/membership");
+const panCheck = require("../pan/service");
 
 // Public sign-up (details, then payment):
 //   1. POST /otp                  email -> 6-digit code by email (refused if already a member)
@@ -126,6 +127,7 @@ router.post("/verify", otpLimiter, async (req, res) => {
     email,
     application: latest && latest.status !== "PAID" ? serializeApplication(latest) : null,
     digilocker: await digilocker.latestVerified(email),
+    pan: await panCheck.latestVerified(email),
     paidOrder: await paidOrderInfo(email),
   });
 });
@@ -137,6 +139,7 @@ router.get("/application", requireJoin, async (req, res) => {
     ...(await applicationResponse(await latestApplication(req.joinEmail))),
     email: req.joinEmail,
     digilocker: await digilocker.latestVerified(req.joinEmail),
+    pan: await panCheck.latestVerified(req.joinEmail),
     paidOrder: await paidOrderInfo(req.joinEmail),
   });
 });
@@ -186,10 +189,33 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
     }
   }
 
+  // Institutional: the organisation's PAN, checked with the Income Tax records. When PAN
+  // verification is switched on it is required, and the PAN and institution name come from
+  // our own verified record.
+  let panVerified = null;
+  if (input.membershipType === "INSTITUTIONAL") {
+    panVerified = await panCheck.findVerified(req.joinEmail, input.panVerificationId);
+    if (panVerified) panCheck.applyVerified(input, panVerified);
+  }
+
   const { data, errors } = validateMember(input, { files, mode: "public", aadhaarVerified: !!verified });
   data.aadhaar = verified
     ? { verified: true, verifiedAt: verified.verifiedAt, last4: verified.aadhaar.last4 || "", verificationId: verified.verificationId, provider: verified.provider }
     : { verified: false };
+  if (input.membershipType === "INSTITUTIONAL") {
+    if (panVerified) {
+      Object.assign(data.pan, {
+        verified: true,
+        verifiedAt: panVerified.verifiedAt,
+        registeredName: panVerified.registeredName,
+        panType: panVerified.panType,
+        verificationId: panVerified.verificationId,
+        provider: panVerified.provider,
+      });
+    } else if (panCheck.enabled() && !errors.pan) {
+      errors.pan = "Please verify the PAN of the institution.";
+    }
+  }
   Object.assign(errors, await checkFileContents(files));
   if (Object.keys(errors).length) {
     await removeUploaded(files);
@@ -260,6 +286,17 @@ router.post("/digilocker/complete", requireJoin, async (req, res) => {
   res.json({ email: req.joinEmail, ...result });
 });
 
+// POST /api/join/pan/verify { pan } — Institutional: checks the organisation's PAN.
+// 200 { verified, verificationId, pan, name, panType, locked }; 400/503 { message, errors.pan }.
+router.post("/pan/verify", otpLimiter, requireJoin, async (req, res) => {
+  try {
+    res.json(await panCheck.verify(req.joinEmail, req.body && req.body.pan));
+  } catch (err) {
+    if (!(err instanceof panCheck.PanCheckError)) throw err;
+    res.status(err.status).json({ message: err.message, errors: { pan: err.message } });
+  }
+});
+
 // DELETE /api/join/application — withdraw the open application.
 router.delete("/application", requireJoin, async (req, res) => {
   const open = await Application.find({ email: req.joinEmail, status: { $in: OPEN_STATUSES } });
@@ -268,9 +305,8 @@ router.delete("/application", requireJoin, async (req, res) => {
 });
 
 // POST /api/join/application/paid — "I have completed the payment" on the Zoho payment page.
-// Usually not needed: Zoho's webhook sends the application to the admin by itself. This is for
-// when Zoho's message is late or another email was used on the page; the admin then checks the
-// payment in Zoho before approving.
+// Usually not needed: Zoho's webhook sends the application to the admin by itself. This checks
+// again for a payment Zoho has reported for this email; without one, nothing changes (409).
 router.post("/application/paid", requireJoin, async (req, res) => {
   const application = await Application.findOne({ email: req.joinEmail, status: { $in: ["UNPAID", "PENDING"] } }).sort({ createdAt: -1 });
   if (!application) return res.status(404).json({ message: "Please fill in your details first." });
@@ -278,12 +314,16 @@ router.post("/application/paid", requireJoin, async (req, res) => {
   if (!PAYMENT_PAGES[application.membershipType]) {
     return res.status(400).json({ message: "Paying on the payment page is not available for this plan. Please contact the membership office." });
   }
-  application.paidOnPage = true;
-  application.paymentReportedAt = new Date();
-  application.status = "PENDING";
-  await verifyApplication(application); // saves; links Zoho's payment if it already arrived
-  await trySend(() => sendApplicationReceivedEmail(application, { paid: true }));
-  await trySend(() => sendNewApplicationAdminEmail(application));
+  // Only a payment Zoho has actually reported sends the application for review.
+  const result = await confirmPagePayment(application);
+  if (!result.verified) {
+    return res.status(409).json({
+      code: "PAYMENT_NOT_RECEIVED",
+      message:
+        "We have not received your payment from Zoho yet. If you have just paid, please wait a minute and try again. " +
+        "If you used a different email address on the Zoho page, please contact the membership office.",
+    });
+  }
   res.json(await applicationResponse(application));
 });
 

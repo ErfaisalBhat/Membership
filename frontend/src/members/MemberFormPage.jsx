@@ -21,6 +21,7 @@ function fromMember(m) {
     membershipType: m.membershipType,
     name: m.name || "",
     contactPerson: m.contactPerson || "",
+    pan: m.pan?.number || "",
     email: m.email || "",
     whatsapp: m.whatsapp || "",
     motherName: m.motherName || "",

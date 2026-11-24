@@ -132,14 +132,14 @@ async function activateOrder(orderId, { paymentId = "", method = "" } = {}) {
       // Paid before any details were filled (an earlier version of the join page): the money is held until the applicant fills in their details and
       // the admin approves; the member (and receipt) is created on approval.
       if (await Member.exists({ email: order.email })) {
-        order.failureReason = "Paid, but a member with this email already exists. Check the member and refund if needed.";
+        order.failureReason = "Paid, but a member with this email already exists. Check the member.";
         await order.save();
         console.error(`[PAYMENT] ${order.orderNo}: member with email already exists`);
         return order;
       }
       const other = await PaymentOrder.exists({ _id: { $ne: order._id }, email: order.email, purpose: "NEW", status: "PAID", memberId: null });
       if (other) {
-        order.failureReason = "Paid twice: this email already has an unused membership payment. Refund one of them.";
+        order.failureReason = "Paid twice: this email already has an unused membership payment. Check with the payer.";
         await order.save();
         console.error(`[PAYMENT] ${order.orderNo}: second unused payment for ${order.email}`);
       }
@@ -150,7 +150,7 @@ async function activateOrder(orderId, { paymentId = "", method = "" } = {}) {
       const application = await Application.findById(order.applicationId);
       const paidByOther = application && application.paymentOrderId && !application.paymentOrderId.equals(order._id);
       if (!application || application.status === "PAID" || paidByOther) {
-        order.failureReason = "Paid twice: this application was already paid by another order. Refund this payment.";
+        order.failureReason = "Paid twice: this application was already paid by another order. Check with the payer.";
         await order.save();
         console.error(`[PAYMENT] ${order.orderNo}: duplicate payment for application ${order.applicationId}`);
         return order;
@@ -159,7 +159,7 @@ async function activateOrder(orderId, { paymentId = "", method = "" } = {}) {
         // Details filled, now paid: the application goes to the admin for review. The member
         // (and receipt) is created when the admin approves it.
         if (await Member.exists({ email: application.email })) {
-          order.failureReason = "Paid, but a member with this email already exists. Check the member and refund if needed.";
+          order.failureReason = "Paid, but a member with this email already exists. Check the member.";
           await order.save();
           console.error(`[PAYMENT] ${order.orderNo}: member with email already exists`);
           return order;
@@ -176,13 +176,13 @@ async function activateOrder(orderId, { paymentId = "", method = "" } = {}) {
       if (application.status !== "APPROVED") {
         // e.g. the admin cancelled or the applicant withdrew it while the payment was in progress.
         // The payment stays unused, so a new application from this email re-uses it.
-        order.failureReason = `Paid, but the application is ${application.status.toLowerCase()}. Refund this payment, unless the applicant submits a new application.`;
+        order.failureReason = `Paid, but the application is ${application.status.toLowerCase()}. The payment is kept for this applicant's next application.`;
         await order.save();
         console.error(`[PAYMENT] ${order.orderNo}: application ${application._id} is ${application.status}`);
         return order;
       }
       if (await Member.exists({ email: application.email })) {
-        order.failureReason = "Paid, but a member with this email already exists. Check the member and refund if needed.";
+        order.failureReason = "Paid, but a member with this email already exists. Check the member.";
         await order.save();
         console.error(`[PAYMENT] ${order.orderNo}: member with email already exists`);
         return order;
@@ -275,7 +275,7 @@ async function applyResult(order, result) {
 
 // Called when the browser checkout finishes. The provider double-checks with the gateway.
 async function confirmFromBrowser(order, clientResult) {
-  if (order.status === "PAID" || order.status === "REFUNDED") return order;
+  if (order.status === "PAID") return order;
   const provider = providerByName(order.provider);
   if (!provider) throw new PaymentError("Unknown payment provider for this order.", 500);
   const result = await provider.verifyPayment(order, clientResult || {});
@@ -305,7 +305,6 @@ function serializeOrder(o) {
     periodTo: o.periodTo,
     memberId: o.memberId,
     applicationId: o.applicationId,
-    refund: o.refund && o.refund.date ? o.refund : null,
   };
 }
 

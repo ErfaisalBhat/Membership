@@ -5,7 +5,6 @@ const mongoose = require("mongoose");
 //   CREATED   -> checkout started, waiting for the payment gateway
 //   PAID      -> gateway confirmed the payment; membership activated / extended
 //   FAILED    -> gateway said the payment failed, or it was abandoned
-//   REFUNDED  -> admin recorded a refund
 const orderSchema = new mongoose.Schema(
   {
     orderNo: { type: String, required: true, unique: true }, // e.g. ASSSR-ORD-000042
@@ -20,7 +19,7 @@ const orderSchema = new mongoose.Schema(
 
     amount: { type: Number, required: true },
     currency: { type: String, default: "INR" },
-    status: { type: String, enum: ["CREATED", "PAID", "FAILED", "REFUNDED"], default: "CREATED", index: true },
+    status: { type: String, enum: ["CREATED", "PAID", "FAILED"], default: "CREATED", index: true },
 
     provider: { type: String, default: "" }, // "zoho", "test" ...
     providerSessionId: { type: String, default: "", index: true },
@@ -30,17 +29,10 @@ const orderSchema = new mongoose.Schema(
     paidAt: { type: Date, default: null },
     receiptNo: { type: String, default: "" },
 
-    // Filled when the payment is applied, so a refund can be understood later.
+    // Filled when the payment is applied.
     periodFrom: Date,
     periodTo: Date,
     previousExpiry: Date,
-
-    refund: {
-      amount: Number,
-      date: Date,
-      reference: String,
-      note: String,
-    },
   },
   { timestamps: true }
 );

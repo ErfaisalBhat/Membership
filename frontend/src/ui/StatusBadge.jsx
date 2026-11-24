@@ -10,7 +10,6 @@ const STYLES = {
   CREATED: "bg-sky-50 text-sky-700 ring-sky-600/20",
   PAID: "bg-green-50 text-green-700 ring-green-600/20",
   FAILED: "bg-red-50 text-red-700 ring-red-600/20",
-  REFUNDED: "bg-violet-50 text-violet-700 ring-violet-600/20",
   CANCELLED: "bg-slate-100 text-slate-600 ring-slate-500/20",
 };
 
@@ -25,7 +24,6 @@ const LABELS = {
   CREATED: "In progress",
   PAID: "Paid",
   FAILED: "Failed",
-  REFUNDED: "Refunded",
   CANCELLED: "Cancelled",
 };
 

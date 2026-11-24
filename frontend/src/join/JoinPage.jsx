@@ -26,6 +26,15 @@ const STEPS = [
 ];
 
 // Which step shows a saved application.
+// Whether this tab opened the Zoho payment page for the application (survives a reload).
+const zohoOpenedFor = (id) => {
+  try {
+    return !!id && sessionStorage.getItem("mp_zoho_opened") === id;
+  } catch {
+    return false;
+  }
+};
+
 const stepFor = (application) => (["UNPAID", "APPROVED"].includes(application.status) ? "pay" : "review");
 
 function Stepper({ step }) {
@@ -76,7 +85,42 @@ export default function JoinPage() {
   const [manual, setManual] = useState(false);
   const [digiAvailable, setDigiAvailable] = useState(null); // null = not asked yet; false = Cashfree down
   const [digiNotice, setDigiNotice] = useState("");
+  // Institutional: the organisation's PAN checked with the Income Tax records
+  // ({ verificationId, pan, name, panType, locked }); fills and locks the PAN and institution name.
+  const [savedPan, setSavedPan] = useState(null);
+  const [panBusy, setPanBusy] = useState(false);
+  const panInfo = plan === "INSTITUTIONAL" ? savedPan : null;
   const topRef = useRef(null);
+
+  useEffect(() => {
+    if (!panInfo) return;
+    setForm((f) => ({ ...f, pan: panInfo.pan, ...(panInfo.name ? { name: panInfo.name } : {}) }));
+  }, [panInfo]);
+
+  async function verifyPan() {
+    // Checked here first so a wrong or personal PAN never reaches Cashfree (each check costs a credit).
+    const pan = String(form.pan || "").toUpperCase();
+    const problem = !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)
+      ? "Enter a valid 10-character PAN, e.g. AAABA1234B."
+      : ["P", "H"].includes(pan[3])
+        ? "This is a personal PAN. Please enter the PAN of the institution or organisation, not of a person."
+        : "";
+    if (problem) {
+      setErrors((e) => ({ ...e, pan: problem }));
+      return;
+    }
+    setPanBusy(true);
+    try {
+      const res = await api("/join/pan/verify", { method: "POST", json: { pan: form.pan }, auth: "join" });
+      setSavedPan(res);
+      clearError("pan");
+      clearError("name");
+    } catch (err) {
+      setErrors((e) => ({ ...e, pan: err.errors?.pan || err.message }));
+    } finally {
+      setPanBusy(false);
+    }
+  }
 
   const scrollTop = () => topRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
 
@@ -182,6 +226,7 @@ export default function JoinPage() {
     api("/join/application", { auth: "join" })
       .then((res) => {
         setPaidOrder(res.paidOrder || null);
+        if (res.pan) setSavedPan(res.pan);
         if (res.paidOrder) setPlan(res.paidOrder.membershipType);
         if (res.application?.status === "PAID" && res.member) {
           setApplication(res.application);
@@ -282,6 +327,7 @@ export default function JoinPage() {
     setBanner("");
     setPaidOrder(res.paidOrder || null);
     if (res.digilocker) setSavedDigi(res.digilocker);
+    if (res.pan) setSavedPan(res.pan);
     if (params.get("dl")) return completeDigilocker(params.get("dl"));
     if (res.application && res.application.status !== "REJECTED") {
       // Details saved and waiting for payment, or paid and under review.
@@ -351,7 +397,7 @@ export default function JoinPage() {
     const fd = new FormData();
     fd.append(
       "data",
-      JSON.stringify({ ...form, membershipType: plan, affiliated: affiliated ? "Yes" : "No", acceptTerms, digilockerId: digi?.verificationId || "" })
+      JSON.stringify({ ...form, membershipType: plan, affiliated: affiliated ? "Yes" : "No", acceptTerms, digilockerId: digi?.verificationId || "", panVerificationId: panInfo?.verificationId || "" })
     );
     for (const [key, file] of Object.entries(files)) if (file) fd.append(key, file);
     try {
@@ -718,9 +764,12 @@ export default function JoinPage() {
             files={files}
             pickFile={pickFile}
             lockedEmail={email}
-            locked={digi?.locked || []}
+            locked={digi?.locked || panInfo?.locked || []}
             aadhaarVerified={!!digi}
             aadhaarPhoto={digi?.photo || ""}
+            onVerifyPan={config.panVerification?.enabled ? verifyPan : null}
+            panBusy={panBusy}
+            panInfo={panInfo}
             documentsNote="Your documents are stored privately and are only seen by the membership office. If you reload this page, choose the files again."
           />
 
@@ -825,7 +874,14 @@ export default function JoinPage() {
                     target="_blank"
                     rel="noopener noreferrer"
                     className={`${buttonClass.primary} w-full`}
-                    onClick={() => setPagePaying(true)}
+                    onClick={() => {
+                      setPagePaying(true);
+                      try {
+                        sessionStorage.setItem("mp_zoho_opened", application._id);
+                      } catch {
+                        /* storage unavailable */
+                      }
+                    }}
                   >
                     Pay {formatMoney(application.amount)} on Zoho
                   </a>
@@ -835,9 +891,12 @@ export default function JoinPage() {
                       Waiting for Zoho to confirm your payment. This page moves on by itself once it does.
                     </p>
                   )}
-                  <button type="button" className={`${buttonClass.secondary} w-full`} disabled={busy} onClick={markPaid}>
-                    {busy ? "Please wait…" : "I have completed the payment"}
-                  </button>
+                  {/* Only once the Zoho page has been opened: before that, nothing can have been paid. */}
+                  {(pagePaying || zohoOpenedFor(application._id)) && (
+                    <button type="button" className={`${buttonClass.secondary} w-full`} disabled={busy} onClick={markPaid}>
+                      {busy ? "Please wait…" : "I have completed the payment"}
+                    </button>
+                  )}
                 </div>
               ) : !config.onlinePayments.enabled ? (
                 <Alert kind="warning" title="Online payment is not available yet">

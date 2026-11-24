@@ -18,7 +18,7 @@ export default function HomePage() {
   if (!config) return <Spinner />;
 
   return (
-    <>
+    <div className="home-ui">
       {/* Intro */}
       <section className="border-b border-slate-200 bg-white">
         <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 lg:grid-cols-[1.4fr_1fr] lg:items-center lg:py-20">
@@ -78,8 +78,8 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Eligibility + verify */}
-      <section className="mx-auto grid max-w-6xl gap-6 px-4 py-14 sm:px-6 lg:grid-cols-2">
+      {/* Eligibility */}
+      <section className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
         <div className="rounded-lg border border-slate-200 bg-white p-6">
           <h2 className="text-lg font-semibold text-slate-900">Terms of membership</h2>
           <ul className="mt-4 list-disc space-y-2 pl-5 text-sm leading-relaxed text-slate-600">
@@ -88,19 +88,7 @@ export default function HomePage() {
             ))}
           </ul>
         </div>
-        <div className="rounded-lg border border-slate-200 bg-white p-6">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-brand-50 text-brand-700">
-            <Icon name="shield" />
-          </div>
-          <h2 className="mt-4 text-lg font-semibold text-slate-900">Checking a membership card?</h2>
-          <p className="mt-2 text-sm leading-relaxed text-slate-600">
-            Every ID card carries a QR code on the back. Scan it with a phone camera to see whether the membership is active today, with the member's photo.
-          </p>
-          <Link to="/members" className="mt-4 inline-flex items-center gap-1 text-sm font-medium text-brand-700 hover:underline">
-            Search the members directory <Icon name="arrowRight" className="h-4 w-4" />
-          </Link>
-        </div>
       </section>
-    </>
+    </div>
   );
 }

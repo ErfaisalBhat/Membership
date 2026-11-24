@@ -92,7 +92,7 @@ router.get("/export.csv", async (req, res) => {
     return `"${s.replace(/"/g, '""')}"`;
   };
   const header = [
-    "Membership ID", "Name", "Contact Person", "Type", "Status", "Email", "Number",
+    "Membership ID", "Name", "Contact Person", "PAN", "Type", "Status", "Email", "Number",
     "Gender", "Date of Birth", "Date of Joining", "Valid Till", "Address Line 1", "Address Line 2",
     "City", "State", "PIN Code", "Affiliated", "Institution", "Department", "Designation",
     "Affiliation State", "Listed Publicly", "Total Paid", "Remarks",
@@ -104,7 +104,7 @@ router.get("/export.csv", async (req, res) => {
     const paid = (m.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
     lines.push(
       [
-        m.membershipId, m.name, m.contactPerson, MEMBERSHIP_TYPES[m.membershipType]?.label || m.membershipType,
+        m.membershipId, m.name, m.contactPerson, (m.pan && m.pan.number) || "", MEMBERSHIP_TYPES[m.membershipType]?.label || m.membershipType,
         effectiveStatus(m), m.email, m.whatsapp, m.gender, displayDate(m.dob), displayDate(m.joinDate),
         m.expiryDate ? displayDate(m.expiryDate) : "Lifetime", a.line1, a.line2, a.city, a.state, a.pincode,
         m.affiliated ? "Yes" : "No", af.institution, af.department, af.designation, af.state,

@@ -70,6 +70,7 @@ function Sidebar({ pending, collapsed = false, onToggle }) {
         <NavItem to="/admin/members" icon="users" label="Members" collapsed={collapsed} />
         <NavItem to="/admin/applications" icon="inbox" label="Applications" collapsed={collapsed} badge={pending} />
         <NavItem to="/admin/payments" icon="card" label="Payments" collapsed={collapsed} />
+        <NavItem to="/admin/fees" icon="id" label="Plan fees" collapsed={collapsed} />
         <NavItem to="/admin/members/new" icon="plus" label="Add member" collapsed={collapsed} />
       </nav>
       <div className="border-t border-white/10 py-3">

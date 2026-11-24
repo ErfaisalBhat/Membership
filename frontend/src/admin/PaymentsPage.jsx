@@ -1,81 +1,20 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { ApiError, api } from "../api/client";
-import { formatDate, formatMoney, todayISO } from "../shared/format";
+import { api } from "../api/client";
+import { formatDate, formatMoney } from "../shared/format";
 import StatusBadge from "../ui/StatusBadge";
 import Pagination from "../ui/Pagination";
-import { Alert, Details, EmptyState, Field, PageHeader, Spinner, buttonClass, inputClass } from "../ui/form";
+import { Alert, Details, EmptyState, PageHeader, Spinner, buttonClass, inputClass } from "../ui/form";
 
 const TABS = [
   ["", "All"],
   ["PAID", "Paid"],
   ["CREATED", "In progress"],
   ["FAILED", "Failed"],
-  ["REFUNDED", "Refunded"],
   ["attention", "Needs attention"],
 ];
 
-function RefundForm({ order, onDone, onCancel }) {
-  const [form, setForm] = useState({ amount: order.amount, date: todayISO(), reference: "", note: "", deactivate: order.purpose === "NEW" });
-  const [errors, setErrors] = useState({});
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value }));
-
-  async function submit(e) {
-    e.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      const res = await api(`/admin/payments/${order._id}/refund`, { method: "POST", json: form });
-      onDone(res.order, "Refund recorded.");
-    } catch (err) {
-      if (err instanceof ApiError) setErrors(err.errors);
-      setError(err.message);
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form onSubmit={submit} noValidate className="space-y-3 rounded-md border border-slate-200 bg-slate-50 p-4">
-      <p className="text-sm text-slate-600">
-        First make the refund in your payment gateway's dashboard, then record it here so the records match.
-      </p>
-      {error && <Alert>{error}</Alert>}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Amount refunded (₹)" htmlFor="rf-amount" required error={errors.amount}>
-          <input id="rf-amount" type="number" min="1" className={inputClass(errors.amount)} value={form.amount} onChange={set("amount")} />
-        </Field>
-        <Field label="Refund date" htmlFor="rf-date" required error={errors.date}>
-          <input id="rf-date" type="date" className={inputClass(errors.date)} value={form.date} onChange={set("date")} />
-        </Field>
-        <Field label="Refund reference" htmlFor="rf-ref">
-          <input id="rf-ref" className={inputClass()} value={form.reference} onChange={set("reference")} />
-        </Field>
-        <Field label="Note" htmlFor="rf-note">
-          <input id="rf-note" className={inputClass()} value={form.note} onChange={set("note")} maxLength={300} />
-        </Field>
-      </div>
-      {order.memberId && (
-        <label className="flex items-start gap-3">
-          <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-700" checked={form.deactivate} onChange={set("deactivate")} />
-          <span className="text-sm text-slate-700">Also make the membership inactive</span>
-        </label>
-      )}
-      <div className="flex gap-2">
-        <button type="submit" className={buttonClass.danger} disabled={busy}>
-          {busy ? "Saving…" : "Record refund"}
-        </button>
-        <button type="button" className={buttonClass.secondary} onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </form>
-  );
-}
-
 function OrderDetail({ order, onChange }) {
-  const [refunding, setRefunding] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
 
@@ -112,7 +51,6 @@ function OrderDetail({ order, onChange }) {
           ["Paid on", order.paidAt && formatDate(order.paidAt)],
           ["Receipt", order.receiptNo],
           ["Period", order.periodFrom && `${formatDate(order.periodFrom)} – ${order.periodTo ? formatDate(order.periodTo) : "Lifetime"}`],
-          ["Refund", order.refund && `${formatMoney(order.refund.amount)} on ${formatDate(order.refund.date)}${order.refund.reference ? ` (${order.refund.reference})` : ""}${order.refund.note ? ` — ${order.refund.note}` : ""}`],
         ]}
       />
       <div className="flex flex-wrap gap-2">
@@ -131,23 +69,7 @@ function OrderDetail({ order, onChange }) {
             {busy ? "Checking…" : "Check status with gateway"}
           </button>
         )}
-        {order.status === "PAID" && !refunding && (
-          <button type="button" className={buttonClass.secondary} onClick={() => setRefunding(true)}>
-            Record a refund
-          </button>
-        )}
       </div>
-      {refunding && (
-        <RefundForm
-          order={order}
-          onCancel={() => setRefunding(false)}
-          onDone={(o, text) => {
-            onChange(o);
-            setRefunding(false);
-            setMessage({ kind: "success", text });
-          }}
-        />
-      )}
     </div>
   );
 }

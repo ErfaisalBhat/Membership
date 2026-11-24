@@ -15,7 +15,6 @@ const paymentSchema = new mongoose.Schema(
     receiptNo: { type: String, default: "" }, // empty for ₹0 (waived) payments
     source: { type: String, enum: ["OFFLINE", "ONLINE"], default: "OFFLINE" },
     orderId: { type: mongoose.Schema.Types.ObjectId, ref: "PaymentOrder", default: null },
-    refunded: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

@@ -1,14 +1,17 @@
-// Membership settings. Change fees, labels or validity here — the admin form,
+// Membership settings. Change labels or validity here — the admin form,
 // the public join page, ID cards, emails and the expiry job all read from this file.
 //
 // fee:          what the member pays (after the waiver in the membership form)
 // regularFee:   the fee before the waiver, shown struck out on the plans
 // validityMonths: null means the membership never expires (Life).
+//
+// The fees below are only the starting values: the admin changes them on the Fees page of the
+// admin panel (saved in the database, see settings/fees.js), which then take their place.
 
 const MEMBERSHIP_TYPES = {
   ANNUAL: { label: "Annual Member", shortLabel: "Annual", fee: 2000, regularFee: 3000, validityMonths: 12 },
-  LIFE: { label: "Life Member", shortLabel: "Life", fee: 4000, regularFee: 5000, validityMonths: null },
-  INSTITUTIONAL: { label: "Institutional Member", shortLabel: "Institutional", fee: 9000, regularFee: 10000, validityMonths: 12 },
+  LIFE: { label: "Life Member", shortLabel: "Life", fee: 4500, regularFee: 5000, validityMonths: null },
+  INSTITUTIONAL: { label: "Institutional Member", shortLabel: "Institutional", fee: 7000, regularFee: 10000, validityMonths: 12 },
 };
 
 const STATUSES = ["ACTIVE", "EXPIRED", "INACTIVE"];

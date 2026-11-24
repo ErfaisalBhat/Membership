@@ -15,6 +15,12 @@ export function loadConfig() {
   return cached;
 }
 
+// After the admin changes something the config carries (e.g. the fees): fetch it afresh.
+export function reloadConfig() {
+  cached = null;
+  return loadConfig();
+}
+
 export function useConfig() {
   const [config, setConfig] = useState(null);
   const [error, setError] = useState(null);

@@ -77,11 +77,6 @@ async function generateReceipt(member, payment) {
   doc.fillColor(NAVY).font("Helvetica-Bold").fontSize(14).text(money(payment.amount), left, boxY + 10, { width: width - 12, align: "right" });
   doc.y = boxY + 50;
 
-  if (payment.refunded) {
-    doc.fillColor("#b42318").font("Helvetica-Bold").fontSize(10).text("This payment has been refunded.", left, doc.y, { width });
-    doc.moveDown(0.6);
-  }
-
   doc.fillColor(MUTED).font("Helvetica").fontSize(8)
     .text("This is a computer-generated receipt and does not require a signature.", left, doc.y, { width, align: "center" });
 

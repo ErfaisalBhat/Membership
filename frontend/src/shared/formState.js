@@ -12,6 +12,7 @@ export const emptyPerson = () => ({
   membershipType: "",
   name: "",
   contactPerson: "",
+  pan: "", // Institutional only: the organisation's PAN
   email: "",
   whatsapp: "",
   motherName: "",

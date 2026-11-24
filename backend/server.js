@@ -20,6 +20,7 @@ const { paymentsProblem } = require("./payments/provider");
 const { digilockerProblem } = require("./digilocker/provider");
 const { EMAIL_LOG_ONLY } = require("./mail/mailer");
 const { startExpiryJob } = require("./expiry/expiry.job");
+const { loadFees } = require("./settings/fees");
 
 const app = express();
 if (process.env.TRUST_PROXY === "1") app.set("trust proxy", 1);
@@ -92,6 +93,7 @@ const PORT = process.env.PORT || 5002;
 const HOST = process.env.HOST || undefined;
 
 connectDB()
+  .then(loadFees) // fees set by the admin replace the ones in config/membership.js
   .then(() => {
     app.listen(PORT, HOST, () => {
       console.log(`Membership API running on http://localhost:${PORT}`);

@@ -1,7 +1,7 @@
 import INDIAN_STATES from "../shared/indianStates";
 import { getIn } from "../shared/formState";
 import { formatBytes } from "../shared/format";
-import { Field, Section, inputClass } from "../ui/form";
+import { Field, Section, buttonClass, inputClass } from "../ui/form";
 
 // The applicant's details, in the order of the membership form:
 // basic credentials, current address, institution of affiliation, document uploads.
@@ -26,6 +26,10 @@ export default function PersonFields({
   aadhaarVerified = false, // join form: identity verified through DigiLocker, no ID proof upload
   aadhaarPhoto = "", // join form: the photo from Aadhaar (data: URL), used as the photograph
   documentsNote = "Documents are stored privately and are only visible to the membership office.",
+  // join form, Institutional: checks the PAN with the Income Tax records (null = no Verify button)
+  onVerifyPan = null,
+  panBusy = false,
+  panInfo = null, // { pan, name, panType } once verified
 }) {
   const isLocked = (path) => locked.includes(path);
   const lockedHint = "From your Aadhaar (DigiLocker).";
@@ -38,11 +42,11 @@ export default function PersonFields({
   const affiliated = form.affiliated === "Yes";
 
   // Called as functions (not components) so inputs keep focus while typing.
-  const text = (path, label, { required = true, type: inputType = "text", hint, maxLength, placeholder, autoComplete, className, inputMode } = {}) => {
+  const text = (path, label, { required = true, type: inputType = "text", hint, lockedAs, maxLength, placeholder, autoComplete, className, inputMode } = {}) => {
     const value = getIn(form, path) ?? "";
     const counter = maxLength ? `${String(value).length}/${maxLength} characters` : null;
     return (
-      <Field label={label} htmlFor={path} required={required} error={errors[path]} hint={isLocked(path) ? lockedHint : hint || counter} className={className}>
+      <Field label={label} htmlFor={path} required={required} error={errors[path]} hint={isLocked(path) ? lockedAs || lockedHint : hint || counter} className={className}>
         <input
           id={path}
           type={inputType}
@@ -127,7 +131,43 @@ export default function PersonFields({
           text("email", "Email", { type: "email" })
         )}
         {text("whatsapp", "Number", { type: "tel", inputMode: "numeric", placeholder: "10-digit mobile number" })}
-        {text("name", isInstitution ? "Institution name" : "Name", { className: "sm:col-span-2", hint: isInstitution ? undefined : "As it should appear on the ID card." })}
+        {isInstitution && (
+          <Field
+            label="PAN of the institution"
+            htmlFor="pan"
+            required
+            error={errors.pan}
+            className="sm:col-span-2"
+            hint={
+              panInfo
+                ? `Verified with the Income Tax records${panInfo.panType ? ` · ${panInfo.panType}` : ""}.`
+                : "The organisation's PAN, not a personal PAN." + (onVerifyPan ? " The institution name is filled in from the Income Tax records." : "")
+            }
+          >
+            <div className="flex gap-2">
+              <input
+                id="pan"
+                className={`${inputClass(errors.pan)} uppercase`}
+                disabled={isLocked("pan")}
+                value={form.pan ?? ""}
+                maxLength={10}
+                placeholder="e.g. AAABA1234B"
+                autoComplete="off"
+                onChange={(e) => set("pan", e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+              />
+              {onVerifyPan && !panInfo && (
+                <button type="button" className={`${buttonClass.secondary} shrink-0`} disabled={panBusy} onClick={onVerifyPan}>
+                  {panBusy ? "Verifying…" : "Verify PAN"}
+                </button>
+              )}
+            </div>
+          </Field>
+        )}
+        {text("name", isInstitution ? "Institution name" : "Name", {
+          className: "sm:col-span-2",
+          hint: isInstitution ? undefined : "As it should appear on the ID card.",
+          lockedAs: isInstitution ? "As registered with the Income Tax Department (from the PAN)." : undefined,
+        })}
         {isInstitution ? (
           text("contactPerson", "Authorized contact person")
         ) : (

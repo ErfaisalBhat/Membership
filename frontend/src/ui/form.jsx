@@ -120,7 +120,7 @@ export function EmptyState({ children }) {
 // Label / value pairs.
 export function Details({ rows, columns = 2 }) {
   return (
-    <dl className={`grid grid-cols-1 gap-x-6 gap-y-4 ${columns === 2 ? "sm:grid-cols-2" : ""}`}>
+    <dl className={`grid grid-cols-1 gap-x-6 gap-y-4 ${columns === 3 ? "sm:grid-cols-2 lg:grid-cols-3" : columns === 2 ? "sm:grid-cols-2" : ""}`}>
       {rows
         .filter(([, v]) => v !== undefined && v !== null && v !== "")
         .map(([label, value]) => (

@@ -283,7 +283,7 @@ export default function ApplicationDetailPage() {
       </p>
 
       {a.status === "PENDING" && a.paymentOrderId && (
-        <Alert kind="info">Paid online. Approving registers the member straight away. Rejecting flags the payment for a refund under Payments.</Alert>
+        <Alert kind="info">Paid online. Approving registers the member straight away. If you reject it, the payment is kept for the applicant's next application.</Alert>
       )}
       {a.paidOnPage && ["PENDING", "APPROVED"].includes(a.status) && (
         <Alert
@@ -338,7 +338,15 @@ export default function ApplicationDetailPage() {
                 ["Email (verified)", a.email],
                 ["Number", a.whatsapp],
                 ...(isInstitution
-                  ? [["Authorized contact person", a.contactPerson]]
+                  ? [
+                      ["Authorized contact person", a.contactPerson],
+                      [
+                        "PAN",
+                        a.pan?.number
+                          ? `${a.pan.number}${a.pan.panType ? ` · ${a.pan.panType}` : ""}${a.pan.verified ? ` · Verified (registered name: ${a.pan.registeredName || "–"})` : " · Not verified"}`
+                          : "–",
+                      ],
+                    ]
                   : [
                       ["Mother's name", a.motherName],
                       ["Father's name", a.fatherName],

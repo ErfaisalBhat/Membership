@@ -5,12 +5,13 @@ const Member = require("../members/Member");
 const PaymentOrder = require("../payments/PaymentOrder");
 const ZohoPayment = require("../payments/ZohoPayment");
 const { referenceRegex, verifyApplication } = require("../payments/zohoPage");
-const { MEMBERSHIP_TYPES } = require("../config/membership");
+const { MEMBERSHIP_TYPES, PAYMENT_PAGES } = require("../config/membership");
+const { currentFees, saveFees } = require("../settings/fees");
 const { requireAdmin } = require("../auth/requireAdmin");
 const { validatePayment } = require("../members/validateMember");
 const { serializeApplication } = require("../members/serialize");
 const { pagination } = require("../members/query");
-const { todayIST, parseDateOnly } = require("../shared/dates");
+const { todayIST } = require("../shared/dates");
 const { DOCUMENT_FIELDS, filePath, removeStoredFiles } = require("../documents/upload");
 const { sendCardEmail, sendApplicationApprovedEmail, sendApplicationRejectedEmail, trySend } = require("../mail/mailer");
 const { providerByName, paymentsProblem, activeProvider } = require("../payments/provider");
@@ -63,6 +64,21 @@ router.get("/overview", async (req, res) => {
     onlineThisMonth: paidThisMonth[0] ? { total: paidThisMonth[0].total, count: paidThisMonth[0].count } : { total: 0, count: 0 },
     onlinePayments: { enabled: !paymentsProblem(), provider: activeProvider() ? activeProvider().name : "", problem: paymentsProblem() },
   });
+});
+
+// ---------- Plan fees ----------
+
+// GET /api/admin/fees -> { fees: [{ key, label, fee, regularFee }], paymentPages }
+router.get("/fees", (req, res) => {
+  res.json({ fees: currentFees(), paymentPages: Object.keys(PAYMENT_PAGES) });
+});
+
+// PUT /api/admin/fees { fees: { ANNUAL: { fee, regularFee }, ... } }
+// New applicants and renewals pay the new fees at once. Payments already made keep their amount.
+router.put("/fees", async (req, res) => {
+  const result = await saveFees(req.body && req.body.fees, req.admin && req.admin.email);
+  if (result.errors) return res.status(400).json({ message: "Please correct the highlighted fees.", errors: result.errors });
+  res.json(result);
 });
 
 // ---------- Applications ----------
@@ -128,12 +144,13 @@ async function deleteDocuments(application) {
 // The online payment an application was paid with beforehand (pay-first flow), if any.
 const paidOrderOf = (application) => (application.paymentOrderId ? PaymentOrder.findById(application.paymentOrderId) : null);
 
-// Rejected or cancelled after paying: flag the payment so the admin refunds it
-// (it shows under Payments -> Needs attention). Cleared if the applicant resubmits.
-async function flagForRefund(application, what) {
+// Rejected or cancelled after paying: note on the payment that it is not used yet (it shows
+// under Payments -> Needs attention). It is kept for the applicant's next application, which
+// clears the note. No refunds are made.
+async function flagUnusedPayment(application, what) {
   const order = await paidOrderOf(application);
   if (!order || order.status !== "PAID" || order.memberId) return false;
-  order.failureReason = `Application ${what}. Refund this payment, unless the applicant submits a new application.`;
+  order.failureReason = `Application ${what}. The payment is kept for this applicant's next application.`;
   await order.save();
   return true;
 }
@@ -151,7 +168,7 @@ router.post("/applications/:id/approve", async (req, res) => {
   if (application.paymentOrderId) {
     const order = await paidOrderOf(application);
     if (!order || order.status !== "PAID" || order.memberId) {
-      return res.status(400).json({ message: "The payment for this application was refunded or is no longer available, so it cannot be approved." });
+      return res.status(400).json({ message: "The payment for this application is no longer available, so it cannot be approved." });
     }
     application.reviewedAt = new Date();
     application.reviewNote = "";
@@ -167,8 +184,10 @@ router.post("/applications/:id/approve", async (req, res) => {
     // Paid on the Zoho payment page (verified by the webhook, or checked by the admin in Zoho).
     application.reviewedAt = new Date();
     application.reviewNote = "";
+    // The amount Zoho actually received (the fee may have changed since); else the current fee.
+    const zoho = application.paymentReference ? await ZohoPayment.findOne({ paymentId: referenceRegex(application.paymentReference) }).lean() : null;
     const { member, entry } = await createMemberFromApplication(application, {
-      amount: MEMBERSHIP_TYPES[application.membershipType].fee,
+      amount: zoho && zoho.amount > 0 ? zoho.amount : MEMBERSHIP_TYPES[application.membershipType].fee,
       mode: "Online",
       reference: application.paymentReference ? `Zoho ${application.paymentReference}`.slice(0, 100) : "Zoho payment page",
       date: todayIST(),
@@ -213,7 +232,7 @@ router.post("/applications/:id/reject", async (req, res) => {
     { $set: { status: "FAILED", failureReason: "Closed: the application was rejected." } }
   );
   // A payment Zoho confirmed is kept for a new application (see join.routes unusedPaymentReference).
-  const paid = (await flagForRefund(application, "rejected")) || !!application.paymentReference;
+  const paid = (await flagUnusedPayment(application, "rejected")) || !!application.paymentReference;
   const email = await trySend(() => sendApplicationRejectedEmail(application, reason, { paid }));
   res.json({ application: serializeApplication(application, { full: true }), email });
 });
@@ -254,7 +273,7 @@ router.post("/applications/:id/cancel", async (req, res) => {
   application.cancelReason = String((req.body && req.body.reason) || "Cancelled by the admin.").slice(0, 300);
   await application.save();
   await deleteDocuments(application);
-  await flagForRefund(application, "cancelled");
+  await flagUnusedPayment(application, "cancelled");
   res.json({ application: serializeApplication(application) });
 });
 
@@ -264,7 +283,7 @@ router.post("/applications/:id/cancel", async (req, res) => {
 router.get("/payments", async (req, res) => {
   const filter = { ...searchFilter(req.query, ["name", "email", "orderNo", "providerPaymentId", "receiptNo"]) };
   const status = one(req.query.status);
-  if (["CREATED", "PAID", "FAILED", "REFUNDED"].includes(status)) filter.status = status;
+  if (["CREATED", "PAID", "FAILED"].includes(status)) filter.status = status;
   const purpose = one(req.query.purpose);
   if (["NEW", "RENEWAL"].includes(purpose)) filter.purpose = purpose;
   if (one(req.query.attention) === "1") {
@@ -308,42 +327,6 @@ router.post("/payments/:id/check", async (req, res) => {
   if (!providerByName(order.provider)) return res.status(400).json({ message: "Unknown payment provider." });
   const updated = await confirmFromBrowser(order, {});
   res.json({ order: serializeOrder(updated) });
-});
-
-// POST /api/admin/payments/:id/refund { amount, date, reference, note, deactivate }
-// Records a refund made in the payment gateway's dashboard.
-router.post("/payments/:id/refund", async (req, res) => {
-  const order = await loadById(PaymentOrder, req.params.id, res, "Payment");
-  if (!order) return;
-  if (order.status !== "PAID") return res.status(400).json({ message: "Only paid payments can be refunded." });
-
-  const body = req.body || {};
-  const errors = {};
-  const amount = Number(body.amount);
-  if (!Number.isFinite(amount) || amount <= 0 || amount > order.amount) errors.amount = `Enter an amount between 1 and ${order.amount}.`;
-  const date = body.date ? parseDateOnly(body.date) : todayIST();
-  if (!date || date > todayIST()) errors.date = "Enter a valid date, not in the future.";
-  const reference = String(body.reference || "").trim().slice(0, 100);
-  const note = String(body.note || "").trim().slice(0, 300);
-  if (Object.keys(errors).length) return res.status(400).json({ message: "Please correct the highlighted fields.", errors });
-
-  order.status = "REFUNDED";
-  order.refund = { amount, date, reference, note };
-  await order.save();
-
-  if (order.memberId) {
-    const member = await Member.findById(order.memberId);
-    if (member) {
-      const entry = member.payments.find((p) => p.orderId && String(p.orderId) === String(order._id));
-      if (entry) entry.refunded = true;
-      if (body.deactivate === true || body.deactivate === "true") {
-        member.status = "INACTIVE";
-        member.statusReason = `Payment refunded${note ? `: ${note}` : ""}`.slice(0, 300);
-      }
-      await member.save();
-    }
-  }
-  res.json({ order: serializeOrder(order) });
 });
 
 module.exports = router;

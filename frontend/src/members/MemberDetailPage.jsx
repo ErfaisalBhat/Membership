@@ -15,6 +15,27 @@ const DOC_LABELS = {
   idProof: "Valid ID card",
 };
 
+// A box whose content opens on click, so rarely used forms don't make the page long.
+function Collapsible({ title, children }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white shadow-xs">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 px-5 py-3 text-left text-sm font-semibold text-slate-900 hover:bg-slate-50"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {title}
+        <span className={`text-slate-400 transition-transform ${open ? "rotate-90" : ""}`} aria-hidden="true">
+          ›
+        </span>
+      </button>
+      {open && <div className="border-t border-slate-100 p-5">{children}</div>}
+    </section>
+  );
+}
+
 export default function MemberDetailPage() {
   const { id } = useParams();
   const location = useLocation();
@@ -97,8 +118,15 @@ export default function MemberDetailPage() {
   const a = member.address || {};
   const af = member.affiliation || {};
 
+  const addressText = [[a.line1, a.line2].filter(Boolean).join(", "), [a.city, a.state && `${a.state} – ${a.pincode}`].filter(Boolean).join(", ")]
+    .filter(Boolean)
+    .join(", ");
+  const affiliationText = member.affiliated
+    ? [af.designation, af.department, af.institution, af.state].filter(Boolean).join(", ")
+    : "Not affiliated to any institute";
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Link to="/admin/members" className="text-sm text-slate-500 hover:text-slate-800">
         ← Members
       </Link>
@@ -111,8 +139,8 @@ export default function MemberDetailPage() {
       {error && <Alert onClose={() => setError("")}>{error}</Alert>}
 
       <Card>
-        <div className="flex flex-col gap-5 sm:flex-row sm:items-start">
-          <div className="h-32 w-26 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+          <div className="h-28 w-22 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
             {photoUrl ? (
               <img src={photoUrl} alt={`Photo of ${member.name}`} className="h-full w-full object-cover" />
             ) : (
@@ -141,65 +169,53 @@ export default function MemberDetailPage() {
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <div className="min-w-0 space-y-6 lg:col-span-2">
-          <Card title="Basic credentials">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="min-w-0 space-y-4 lg:col-span-2">
+          <Card title="Member details">
             <Details
+              columns={3}
               rows={[
                 ["Email", member.email],
                 ["Number", member.whatsapp],
                 ...(isInstitution
-                  ? [["Authorized contact person", member.contactPerson]]
+                  ? [
+                      ["Authorized contact person", member.contactPerson],
+                      [
+                        "PAN",
+                        member.pan?.number
+                          ? `${member.pan.number}${member.pan.panType ? ` · ${member.pan.panType}` : ""}${member.pan.verified ? " · Verified" : " · Not verified"}`
+                          : "–",
+                      ],
+                    ]
                   : [
                       ["Mother's name", member.motherName],
                       ["Father's name", member.fatherName],
                       ["Gender", member.gender],
                       ["Date of birth", formatDate(member.dob)],
                     ]),
+                ["Current address", addressText],
+                ["Institution of affiliation", affiliationText],
               ]}
             />
           </Card>
 
-          <Card title="Current address">
-            <p className="text-sm text-slate-900">
-              {[a.line1, a.line2].filter(Boolean).join(", ")}
-              <br />
-              {a.city}, {a.state} – {a.pincode}
-            </p>
-          </Card>
-
-          <Card title="Institution of affiliation">
-            {member.affiliated ? (
-              <Details
-                rows={[
-                  ["University / Institution / Organization", af.institution],
-                  ["Department", af.department],
-                  ["Designation", af.designation],
-                  ["State", af.state],
-                ]}
-              />
-            ) : (
-              <p className="text-sm text-slate-600">Not affiliated to any institute.</p>
-            )}
-          </Card>
-
-          <Card title="Documents" padded={false}>
-            <ul className="divide-y divide-slate-100">
+          <Card title="Documents">
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
               {Object.keys(DOC_LABELS).map((key) => {
                 const doc = member.documents?.[key];
                 if (!doc) return null;
                 return (
-                  <li key={key} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
-                    <div>
-                      <p className="text-sm font-medium">
+                  <li key={key} className="flex min-w-0 items-center justify-between gap-2 rounded-md border border-slate-200 px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
                         {DOC_LABELS[key]}
                         {key === "idProof" && member.idProofType ? ` (${member.idProofType})` : ""}
                       </p>
-                      <p className="text-xs text-slate-500">
+                      <p className="truncate text-xs text-slate-500" title={doc.originalName}>
                         {doc.originalName} · {formatBytes(doc.size)}
                       </p>
                     </div>
-                    <button type="button" className={buttonClass.ghost} onClick={() => open(`/members/${id}/files/${key}`)}>
+                    <button type="button" className={`${buttonClass.ghost} shrink-0`} onClick={() => open(`/members/${id}/files/${key}`)}>
                       View
                     </button>
                   </li>
@@ -232,7 +248,6 @@ export default function MemberDetailPage() {
                       <td className="px-4 py-3">
                         <span className="tabular-nums">{formatMoney(p.amount)}</span> · {p.mode}
                         <div className="break-all text-xs text-slate-500">{p.reference || "No reference"}</div>
-                        {p.refunded && <div className="text-xs font-medium text-violet-700">Refunded</div>}
                       </td>
                       <td className="px-4 py-3">
                         {p.receiptNo ? (
@@ -257,7 +272,7 @@ export default function MemberDetailPage() {
           )}
         </div>
 
-        <div className="space-y-6">
+        <div className="space-y-4">
           <Card title="ID card">
             <div className="space-y-2">
               <button type="button" className={`${buttonClass.primary} w-full`} onClick={() => open(`/members/${id}/card.pdf`)}>
@@ -277,14 +292,14 @@ export default function MemberDetailPage() {
           </Card>
 
           {canRenew && (
-            <Card title="Record a renewal">
+            <Collapsible key={`renew-${member.expiryDate}`} title="Record a renewal">
               <RenewPanel key={member.expiryDate} member={member} config={config} onDone={updated} />
-            </Card>
+            </Collapsible>
           )}
 
-          <Card title={member.status === "INACTIVE" ? "Reinstate" : "Suspend or cancel"}>
+          <Collapsible key={`status-${member.status}`} title={member.status === "INACTIVE" ? "Reinstate" : "Suspend or cancel"}>
             <StatusPanel member={member} onDone={updated} />
-          </Card>
+          </Collapsible>
         </div>
       </div>
     </div>
