@@ -671,11 +671,8 @@ export default function JoinPage() {
             <button type="button" className={buttonClass.primary} disabled={busy} onClick={startDigilocker}>
               {busy ? "Opening DigiLocker…" : "Continue with DigiLocker"}
             </button>
-            <button type="button" className={buttonClass.secondary} onClick={() => setManual(true)}>
-              Fill the form manually instead
-            </button>
           </div>
-          <p className="mt-4 text-xs text-slate-500">Both ways, your application is reviewed by the membership office before your membership is issued.</p>
+          <p className="mt-4 text-xs text-slate-500">Your application is reviewed by the membership office before your membership is issued.</p>
         </Card>
       )}
 
