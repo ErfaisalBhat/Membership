@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { useConfig } from "../api/useConfig";
 import { formatDate, formatMoney } from "../shared/format";
 import StatusBadge from "../ui/StatusBadge";
-import { Alert, Spinner } from "../ui/form";
+import { Alert, PageHeader, Spinner } from "../ui/form";
 
 // One cell of the key-figures strip.
 function Figure({ label, value, note, to }) {
@@ -66,6 +66,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
+      <PageHeader title="Dashboard" />
       {overview.paymentsNeedingAttention > 0 && (
         <Alert kind="warning" title={`${overview.paymentsNeedingAttention} payment(s) need attention`}>
           Money was received but something went wrong (for example, paid twice).{" "}
@@ -91,7 +92,7 @@ export default function DashboardPage() {
       </section>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Panel title="Awaiting your review" to="/admin/applications">
+        <Panel title="Latest applications" to="/admin/applications">
           {applications.length === 0 ? (
             <p className="px-5 py-10 text-center text-sm text-zinc-500">No applications are waiting for review.</p>
           ) : (

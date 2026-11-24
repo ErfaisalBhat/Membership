@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import { api, apiBlob, openInNewTab } from "../api/client";
 import { useConfig } from "../api/useConfig";
 import { formatBytes, formatDate, formatMoney } from "../shared/format";
 import StatusBadge from "../ui/StatusBadge";
 import Icon from "../ui/icons";
+import FileViewer from "../ui/FileViewer";
 import { Alert, Card, Details, Spinner, buttonClass } from "../ui/form";
 import RenewPanel from "./RenewPanel";
 import StatusPanel from "./StatusPanel";
@@ -46,6 +47,9 @@ export default function MemberDetailPage() {
   const [flash, setFlash] = useState(location.state?.flash || "");
   const [photoUrl, setPhotoUrl] = useState(null);
   const [busy, setBusy] = useState("");
+  // The document shown in the pop-up viewer ({ path, title }), or null.
+  const [viewing, setViewing] = useState(null);
+  const closeViewer = useCallback(() => setViewing(null), []);
 
   // Clear the flash from history so a refresh doesn't show it again.
   useEffect(() => {
@@ -127,6 +131,7 @@ export default function MemberDetailPage() {
 
   return (
     <div className="space-y-4">
+      <FileViewer file={viewing} onClose={closeViewer} />
       <Link to="/admin/members" className="text-sm text-slate-500 hover:text-slate-800">
         ← Members
       </Link>
@@ -215,7 +220,16 @@ export default function MemberDetailPage() {
                         {doc.originalName} · {formatBytes(doc.size)}
                       </p>
                     </div>
-                    <button type="button" className={`${buttonClass.ghost} shrink-0`} onClick={() => open(`/members/${id}/files/${key}`)}>
+                    <button
+                      type="button"
+                      className={`${buttonClass.ghost} shrink-0`}
+                      onClick={() =>
+                        setViewing({
+                          path: `/members/${id}/files/${key}`,
+                          title: `${DOC_LABELS[key]}${key === "idProof" && member.idProofType ? ` (${member.idProofType})` : ""}`,
+                        })
+                      }
+                    >
                       View
                     </button>
                   </li>
@@ -276,10 +290,10 @@ export default function MemberDetailPage() {
           <Card title="ID card">
             <div className="space-y-2">
               <button type="button" className={`${buttonClass.primary} w-full`} onClick={() => open(`/members/${id}/card.pdf`)}>
-                <Icon name="id" className="h-4 w-4" /> View / print ID card
+                <Icon name="id" className="h-4 w-4" /> View / print
               </button>
               <button type="button" className={`${buttonClass.secondary} w-full`} disabled={busy === "email"} onClick={emailCard}>
-                <Icon name="mail" className="h-4 w-4" /> {busy === "email" ? "Sending…" : "Email ID card to member"}
+                <Icon name="mail" className="h-4 w-4" /> {busy === "email" ? "Sending…" : "Email to member"}
               </button>
               <p className="pt-2 text-xs text-slate-500">
                 QR verification link:{" "}

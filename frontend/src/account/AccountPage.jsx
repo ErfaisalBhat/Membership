@@ -86,13 +86,8 @@ function RenewCard({ account, onUpdated }) {
   );
   const onCancel = useCallback(() => setCheckout(null), []);
 
-  if (member.expiryDate === null) {
-    return (
-      <Card title="Renewal">
-        <p className="text-sm text-slate-600">Life membership never expires — there is nothing to renew.</p>
-      </Card>
-    );
-  }
+  // Life membership: "Valid till: Lifetime" above already says there is nothing to renew.
+  if (member.expiryDate === null) return null;
 
   return (
     <Card title="Renewal">
@@ -101,8 +96,7 @@ function RenewCard({ account, onUpdated }) {
         {renewal.canRenew ? (
           <>
             <p className="text-sm text-slate-600">
-              {member.status === "EXPIRED" ? "Your membership has expired." : `Your membership expires on ${formatDate(member.expiryDate)}.`} Renewing now extends it to{" "}
-              <strong className="text-slate-900">{formatDate(renewal.periodTo)}</strong>.
+              Renewing now extends your membership to <strong className="text-slate-900">{formatDate(renewal.periodTo)}</strong>.
             </p>
             <div className="flex items-baseline justify-between rounded-md bg-slate-50 px-4 py-3">
               <span className="text-sm text-slate-600">Renewal fee</span>
@@ -114,7 +108,7 @@ function RenewCard({ account, onUpdated }) {
               <Checkout checkout={checkout} onResult={onResult} onCancel={onCancel} />
             ) : (
               <button type="button" className={`${buttonClass.primary} w-full`} disabled={busy} onClick={start}>
-                {busy ? "Please wait…" : `Renew for ${formatMoney(renewal.amount)}`}
+                {busy ? "Please wait…" : "Renew now"}
               </button>
             )}
           </>
@@ -266,10 +260,7 @@ function Dashboard() {
   return (
     <div className="mx-auto max-w-5xl space-y-6 px-4 py-10 sm:px-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">My membership</h1>
-          <p className="mt-1 text-sm text-slate-500">{config?.orgName}</p>
-        </div>
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">My membership</h1>
         <button type="button" className={buttonClass.secondary} onClick={logout}>
           <Icon name="logout" className="h-4 w-4" /> Log out
         </button>

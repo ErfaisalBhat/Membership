@@ -6,20 +6,6 @@ import { api } from "../api/client";
 import Brand from "../ui/Brand";
 import Icon from "../ui/icons";
 
-const SECTION_TITLES = [
-  ["/admin/members/new", "Add member"],
-  ["/admin/members", "Members"],
-  ["/admin/applications", "Applications"],
-  ["/admin/payments", "Payments"],
-  ["/admin/password", "Change password"],
-  ["/admin", "Dashboard"],
-];
-
-function sectionTitle(pathname) {
-  const hit = SECTION_TITLES.find(([p]) => pathname === p || pathname.startsWith(`${p}/`));
-  return hit ? hit[1] : "Administration";
-}
-
 // Dark, institutional sidebar: white text, a thin white bar marks the active page.
 // When collapsed only the icons show; the label appears as a tooltip.
 function NavItem({ to, end, icon, label, collapsed, badge }) {
@@ -126,10 +112,9 @@ export default function AdminLayout() {
         {/* Top bar: sidebar toggle, section, date, signed-in user */}
         <header className="flex items-center justify-between gap-4 border-b border-zinc-200 bg-white px-4 py-3 sm:px-6">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-zinc-500">{config?.orgName || "Membership"}</p>
-              <p className="truncate text-sm font-semibold text-zinc-900">{sectionTitle(location.pathname)}</p>
-            </div>
+            {/* The page's own title is just below, so the bar shows only the organisation
+                (on phones the dark bar above already shows it). */}
+            <p className="hidden truncate text-[11px] font-semibold uppercase tracking-widest text-zinc-500 lg:block">{config?.orgName || "Administration"}</p>
           </div>
           <div className="flex shrink-0 items-center gap-4">
             <span className="hidden text-sm text-zinc-700 sm:inline">{username}</span>

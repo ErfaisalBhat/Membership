@@ -209,14 +209,8 @@ function detailsRows(member) {
     ["Membership Type", type ? type.shortLabel : member.membershipType],
     ["Date of Registration", dottedDate(member.joinDate)],
     ["Valid Till", validTill],
-    ["Renewal Date", member.expiryDate ? dottedDate(member.expiryDate) : ""],
   ];
 }
-
-const contactLine = () =>
-  CONTACT.email
-    ? p(`If you have any questions or require assistance, please contact us at ${CONTACT.email}.`)
-    : p("If you have any questions or require assistance, please contact the membership office.");
 
 const accountUrl = () => `${FRONTEND_URL}/account`;
 
@@ -228,11 +222,11 @@ async function sendCardEmail(member, kind = "welcome", { payment = null } = {}) 
   const intros = {
     welcome: {
       subject: `Your ${ORG_CODE} Membership ID Card`,
-      text: `Thank you for becoming a member of ${ORG_NAME}. Please find your membership ID card attached to this email.`,
+      text: "Thank you for becoming a member. Please find your membership ID card attached to this email.",
     },
     renewal: {
       subject: `Your ${ORG_CODE} Membership has been renewed`,
-      text: `Thank you for renewing your membership of ${ORG_NAME}. Please find your updated membership ID card attached to this email.`,
+      text: "Thank you for renewing your membership. Please find your updated membership ID card attached to this email.",
     },
     resend: {
       subject: `Your ${ORG_CODE} Membership ID Card`,
@@ -255,19 +249,12 @@ async function sendCardEmail(member, kind = "welcome", { payment = null } = {}) 
   const blocks = [
     p(intro.text),
     table(detailsRows(member)),
-    p("The attachment contains the front and back of your ID card. For the best viewing experience, we recommend:"),
-    list([
-      "Downloading the attachment to your device",
-      "Opening it with a PDF viewer to ensure the highest quality",
-      "Printing the card on photo paper, if needed",
-    ]),
     ...(payment && payment.receiptNo ? [p(`The receipt for your payment (No. ${payment.receiptNo}) is also attached.`)] : []),
     p(
-      "Please keep your ID card safe and carry it with you when attending organizational programmes. You may save it digitally on your mobile device or print it for physical use."
+      "The card has a front and a back. Please keep it safe and carry it with you to the Society's programmes: save the PDF on your phone, or print it (photo paper gives the best result)."
     ),
     p("You can download your ID card and receipts, update your contact details and renew your membership from your member account:"),
     button("Go to my member account", accountUrl()),
-    contactLine(),
   ];
 
   return send({ to: member.email, subject: intro.subject, title: "Membership ID Card", greeting: greetingFor(member), blocks, attachments });
@@ -282,11 +269,10 @@ async function sendReminderEmail(member, daysLeft) {
     title: "Membership Renewal Reminder",
     greeting: greetingFor(member),
     blocks: [
-      p(`This is a reminder that your membership of ${ORG_NAME} expires ${when}, on ${expiry}.`),
+      p(`Your membership expires ${when}.`), // the date is in the table below
       table(detailsRows(member)),
       p("You can renew online from your member account. Log in with your registered email address; we will send you a one-time code."),
       button("Renew my membership", accountUrl()),
-      contactLine(),
     ],
   });
 }
@@ -300,7 +286,7 @@ async function sendCodeEmail(email, codeValue, purpose, minutes) {
     title: joining ? "Email Verification" : "Member Login",
     greeting: joining ? "Applicant" : "Member",
     blocks: [
-      p(joining ? `Use this code to verify your email address for your ${ORG_NAME} membership application:` : "Use this code to log in to your member account:"),
+      p(joining ? "Use this code to verify your email address for your membership application:" : "Use this code to log in to your member account:"),
       code(codeValue),
       p(`The code is valid for ${minutes} minutes. Do not share it with anyone. If you did not request it, you can ignore this email.`),
     ],
@@ -322,17 +308,18 @@ async function sendPaymentIncompleteEmail(application) {
       ),
       button("Complete my payment", `${FRONTEND_URL}/join?continue=1`),
       p("If money was deducted from your account, please do not pay again. Contact us with the transaction details and we will check it for you."),
-      contactLine(),
     ],
   });
 }
 
 // ---------- Application review ----------
 
-function applicationRows(application) {
+// withApplicant: the applicant's name as a row (the office's email). The applicant's own emails
+// already greet them by name.
+function applicationRows(application, { withApplicant = false } = {}) {
   const type = MEMBERSHIP_TYPES[application.membershipType];
   return [
-    ["Applicant", application.name],
+    ...(withApplicant || application.membershipType === "INSTITUTIONAL" ? [["Applicant", application.name]] : []),
     ["Membership Type", type ? type.label : application.membershipType],
     ["Fee", type ? `Rs. ${type.fee}` : ""],
     ["Date of Application", dottedDate(application.createdAt || new Date())],
@@ -350,7 +337,7 @@ async function sendApplicationReceivedEmail(application, { paid = false } = {}) 
     greeting: greetingFor(application),
     blocks: [
       p(
-        `Thank you for applying for membership of ${ORG_NAME}. We have received your ${
+        `Thank you for applying. We have received your ${
           application.paymentReference ? "application, documents and payment details" : `${paid ? "payment, " : ""}application and documents`
         }.`
       ),
@@ -360,7 +347,6 @@ async function sendApplicationReceivedEmail(application, { paid = false } = {}) 
           ? `Your ${application.paymentReference ? "payment will be checked and your " : ""}application will now be reviewed by the Membership Section. Once it is approved, your membership number, ID card and payment receipt will be emailed to you.`
           : "Your application will now be reviewed by the Membership Section. You do not need to pay anything yet. We will email you once it has been reviewed; if it is approved, the email will have a link to pay the membership fee online."
       ),
-      contactLine(),
     ],
   });
 }
@@ -372,10 +358,10 @@ async function sendNewApplicationAdminEmail(application) {
     to: ADMIN_NOTIFY_EMAIL,
     subject: `New membership application: ${application.name}`,
     title: "New Membership Application",
-    greeting: "Membership Section",
+    greeting: "Sir/Madam",
     blocks: [
       p("A new membership application has been submitted and is waiting for your review."),
-      table([...applicationRows(application), ["Email", application.email], ["Number", application.whatsapp]]),
+      table([...applicationRows(application, { withApplicant: true }), ["Email", application.email], ["Number", application.whatsapp]]),
       button("Review the application", `${FRONTEND_URL}/admin/applications/${application._id}`),
     ],
   });
@@ -389,13 +375,12 @@ async function sendApplicationApprovedEmail(application) {
     title: "Membership Application Approved",
     greeting: greetingFor(application),
     blocks: [
-      p(`We are pleased to inform you that your application for membership of ${ORG_NAME} has been approved.`),
+      p("Congratulations!"),
       table(applicationRows(application)),
       p(
         `To complete your membership, please pay the membership fee within ${PENDING_APPLICATION_DAYS} days. Open the link below, verify your email address with the one-time code we send you, and continue to payment. Your membership number and ID card will be emailed to you as soon as the payment is confirmed.`
       ),
       button("Pay the membership fee", `${FRONTEND_URL}/join?continue=1`),
-      contactLine(),
     ],
   });
 }
@@ -409,7 +394,7 @@ async function sendApplicationRejectedEmail(application, reason, { paid = false 
     title: "Membership Application",
     greeting: greetingFor(application),
     blocks: [
-      p(`Thank you for your interest in ${ORG_NAME}. After review, we are unable to approve your membership application at this time.`),
+      p("Thank you for your interest. After review, we are unable to approve your membership application at this time."),
       ...(reason ? [table([["Reason", reason]])] : []),
       p(
         paid
@@ -421,7 +406,6 @@ async function sendApplicationRejectedEmail(application, reason, { paid = false 
           ? `If you can provide the correct information, open ${FRONTEND_URL}/join, verify your email address and submit a new application. You will not need to pay again.`
           : "If you believe this is a mistake, or you can provide the missing information, you are welcome to submit a new application."
       ),
-      contactLine(),
     ],
   });
 }

@@ -32,7 +32,9 @@ export default function PersonFields({
   panInfo = null, // { pan, name, panType } once verified
 }) {
   const isLocked = (path) => locked.includes(path);
-  const lockedHint = "From your Aadhaar (DigiLocker).";
+  // On the join form the alert above the form already says the greyed-out fields come from
+  // Aadhaar, so the fields themselves carry no hint.
+  const lockedHint = aadhaarVerified ? "" : "From your Aadhaar (DigiLocker).";
   // Joined through DigiLocker (join form, or the admin editing such a member): no ID proof
   // upload, and the Aadhaar address may have lines longer than the usual 30 characters.
   const viaAadhaar = aadhaarVerified || !!form.aadhaarVerified;
@@ -88,7 +90,7 @@ export default function PersonFields({
     const errKey = `documents.${key}`;
     if (key === "photo" && aadhaarPhoto && isLocked(errKey)) {
       return (
-        <Field key={key} label={doc.label} htmlFor={errKey} hint="From your Aadhaar (DigiLocker). Printed on the ID card.">
+        <Field key={key} label={doc.label} htmlFor={errKey} hint="Printed on the ID card.">
           <img id={errKey} src={aadhaarPhoto} alt="Photograph from Aadhaar" className="h-36 w-28 rounded-md border border-slate-300 object-cover" />
         </Field>
       );
@@ -210,7 +212,7 @@ export default function PersonFields({
         {fileField("signature")}
         {viaAadhaar ? (
           <p className="rounded-md bg-green-50 px-3 py-2 text-sm text-green-800 sm:col-span-2">
-            ID proof: your Aadhaar has been verified through DigiLocker, so you do not need to upload an ID card.
+            ID proof: not needed, your Aadhaar is verified.
           </p>
         ) : (
           <>

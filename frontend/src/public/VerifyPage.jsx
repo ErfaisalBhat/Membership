@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, apiUrl } from "../api/client";
 import { formatDate } from "../shared/format";
-import StatusBadge from "../ui/StatusBadge";
 import Icon from "../ui/icons";
 import { Spinner } from "../ui/form";
 
@@ -75,12 +74,6 @@ function Result({ result, token }) {
           <div>
             <dt className="text-xs text-slate-500">Type</dt>
             <dd>{result.typeLabel}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-slate-500">Status</dt>
-            <dd>
-              <StatusBadge status={result.status} />
-            </dd>
           </div>
           <div>
             <dt className="text-xs text-slate-500">Valid till</dt>

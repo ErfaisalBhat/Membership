@@ -47,7 +47,7 @@ export default function FeesPage() {
       fill(res.fees);
       setErrors({});
       await reloadConfig().catch(() => {});
-      setMessage({ kind: "success", text: "Fees saved. New applicants and renewals now pay these fees." });
+      setMessage({ kind: "success", text: "Fees saved." });
     } catch (err) {
       if (err instanceof ApiError && Object.keys(err.errors).length) setErrors(err.errors);
       setMessage({ kind: "error", text: err.message });
@@ -75,7 +75,7 @@ export default function FeesPage() {
           return (
             <fieldset key={f.key} className="grid gap-4 border-b border-slate-100 pb-5 last:border-0 last:pb-0 sm:grid-cols-2">
               <legend className="mb-2 text-sm font-semibold text-slate-900">{f.label}</legend>
-              <Field label="Fee (₹)" htmlFor={`${f.key}-fee`} required error={errors[`${f.key}.fee`]} hint={`Now: ${formatMoney(f.fee)}`}>
+              <Field label="Fee (₹)" htmlFor={`${f.key}-fee`} required error={errors[`${f.key}.fee`]} hint={String(f.fee) !== v.fee ? `Now: ${formatMoney(f.fee)}` : undefined}>
                 <input id={`${f.key}-fee`} inputMode="numeric" className={inputClass(errors[`${f.key}.fee`])} value={v.fee ?? ""} onChange={set(f.key, "fee")} />
               </Field>
               <Field

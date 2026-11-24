@@ -6,9 +6,10 @@ function validity(t) {
   return t.validityMonths ? `Valid for ${t.validityMonths} months` : "Lifetime — never expires";
 }
 
+// Who the plan is for. How long it lasts is shown once, at the bottom of the card.
 const WHO = {
-  ANNUAL: "For individuals, renewed every year.",
-  LIFE: "One payment for lifelong membership.",
+  ANNUAL: "For individuals.",
+  LIFE: "For individuals, with a single payment.",
   INSTITUTIONAL: "For universities, colleges and organizations.",
 };
 
@@ -38,7 +39,6 @@ export default function PlanCards({ config, selected, onSelect }) {
               <span className="text-2xl font-semibold tabular-nums text-slate-900">{formatMoney(t.fee)}</span>
               {t.regularFee > t.fee && <span className="text-sm text-slate-400 line-through tabular-nums">{formatMoney(t.regularFee)}</span>}
             </div>
-            {t.regularFee > t.fee && <p className="text-xs font-medium text-green-700">Includes a waiver of {formatMoney(t.regularFee - t.fee)}</p>}
             <p className="mt-3 border-t border-slate-100 pt-3 text-sm text-slate-600">{validity(t)}</p>
           </>
         );

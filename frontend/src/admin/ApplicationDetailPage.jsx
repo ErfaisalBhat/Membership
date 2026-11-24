@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ApiError, api, openInNewTab } from "../api/client";
+import { ApiError, api } from "../api/client";
+import FileViewer from "../ui/FileViewer";
 import { useConfig } from "../api/useConfig";
 import { formatBytes, formatDate, formatMoney, todayISO } from "../shared/format";
 import StatusBadge from "../ui/StatusBadge";
@@ -97,8 +98,8 @@ function Approve({ application, onDone, onRegistered }) {
         {unverifiedPage
           ? `Zoho has not confirmed this payment yet. Check it in your Zoho Payments dashboard (search for the applicant's email) before approving. When you approve, the applicant becomes a member at once and gets the welcome email with ID card and receipt.`
           : paid
-          ? `Check the details and documents. The applicant has already paid ${formatMoney(application.amount)} online. When you approve, they become a member at once and get the welcome email with ID card and receipt.`
-          : `Check the details and documents. When you approve, the applicant is emailed a link to pay ${formatMoney(application.amount)}. They become a member and get their ID card once the payment is confirmed.`}
+          ? `Check the details and documents. The applicant has already paid. When you approve, they become a member at once and get the welcome email with ID card and receipt.`
+          : `Check the details and documents. When you approve, the applicant is emailed a link to pay. They become a member and get their ID card once the payment is confirmed.`}
       </p>
       {error && <Alert>{error}</Alert>}
       {confirming ? (
@@ -238,14 +239,9 @@ export default function ApplicationDetailPage() {
       .catch((e) => setError(e.message));
   }, [id]);
 
-  async function open(path) {
-    setError("");
-    try {
-      await openInNewTab(path);
-    } catch (e) {
-      setError(e.message);
-    }
-  }
+  // The document shown in the pop-up viewer ({ path, title }), or null.
+  const [viewing, setViewing] = useState(null);
+  const closeViewer = useCallback(() => setViewing(null), []);
 
   if (error && !data) return <Alert>{error}</Alert>;
   if (!data || !config) return <Spinner />;
@@ -257,6 +253,7 @@ export default function ApplicationDetailPage() {
 
   return (
     <div className="space-y-6">
+      <FileViewer file={viewing} onClose={closeViewer} />
       <Link to="/admin/applications" className="text-sm text-slate-500 hover:text-slate-800">
         ← Applications
       </Link>
@@ -270,11 +267,6 @@ export default function ApplicationDetailPage() {
       <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-2xl font-semibold tracking-tight">{a.name}</h1>
         <StatusBadge status={a.status} large />
-        {a.aadhaar?.verified ? (
-          <StatusBadge status="ACTIVE" large label="Aadhaar verified (DigiLocker)" />
-        ) : (
-          <StatusBadge status="INACTIVE" large label="Filled manually" />
-        )}
       </div>
       <p className="-mt-4 text-sm text-slate-600">
         {a.typeLabel} · {formatMoney(a.amount)} · applied {formatDate(a.createdAt)}
@@ -283,7 +275,7 @@ export default function ApplicationDetailPage() {
       </p>
 
       {a.status === "PENDING" && a.paymentOrderId && (
-        <Alert kind="info">Paid online. Approving registers the member straight away. If you reject it, the payment is kept for the applicant's next application.</Alert>
+        <Alert kind="info">Paid online. If you reject it, the payment is kept for the applicant's next application.</Alert>
       )}
       {a.paidOnPage && ["PENDING", "APPROVED"].includes(a.status) && (
         <Alert
@@ -291,33 +283,33 @@ export default function ApplicationDetailPage() {
           title={a.paymentVerified ? `Paid on Zoho · Payment ID ${a.paymentReference}` : "Payment not confirmed by Zoho yet"}
         >
           {a.paymentVerified
-            ? `${a.paymentNote} Approving registers the member straight away.`
-            : `${a.paymentNote || "Not confirmed by Zoho yet."} The applicant says they paid on the Zoho payment page${
-                a.paymentReportedAt ? ` (${formatDate(a.paymentReportedAt)})` : ""
-              }. Check it in your Zoho Payments dashboard before approving.`}
+            ? a.paymentNote
+            : `${
+                // A note that only says "not received yet" repeats the title; specific ones (wrong amount …) are kept.
+                a.paymentNote && !/not (received|reported)|has not reported/i.test(a.paymentNote) ? `${a.paymentNote} ` : ""
+              }The applicant says they paid on the Zoho payment page${a.paymentReportedAt ? ` (${formatDate(a.paymentReportedAt)})` : ""}.`}
         </Alert>
       )}
       {a.status === "UNPAID" && (
         <Alert kind="info">
-          The applicant has filled in the details but has not paid yet. It comes up for review once paid. Unpaid applications are cancelled automatically
-          after {config.pendingApplicationDays} days.
+          It comes up for review once paid. Unpaid applications are cancelled automatically after {config.pendingApplicationDays} days.
         </Alert>
       )}
       {a.status === "APPROVED" && (
         <Alert kind="info">
-          Approved. The applicant has been asked to pay; they become a member as soon as the payment is confirmed. Approved applications that are not paid
-          within {config.pendingApplicationDays} days are cancelled automatically.
+          The applicant becomes a member as soon as the payment is confirmed. Approved applications that are not paid within {config.pendingApplicationDays}{" "}
+          days are cancelled automatically.
         </Alert>
       )}
       {a.status === "REJECTED" && (
-        <Alert kind="warning" title="Rejected">
+        <Alert kind="warning" title="Reason">
           {a.reviewNote}
         </Alert>
       )}
 
       {a.status === "PAID" && a.memberId && (
         <Alert kind="success">
-          Paid and registered.{" "}
+          Registered as a member.{" "}
           <Link className="font-medium underline" to={`/admin/members/${a.memberId}`}>
             Open the member
           </Link>
@@ -380,7 +372,16 @@ export default function ApplicationDetailPage() {
                           {doc.originalName} · {formatBytes(doc.size)}
                         </p>
                       </div>
-                      <button type="button" className={buttonClass.ghost} onClick={() => open(`/admin/applications/${id}/files/${key}`)}>
+                      <button
+                        type="button"
+                        className={buttonClass.ghost}
+                        onClick={() =>
+                          setViewing({
+                            path: `/admin/applications/${id}/files/${key}`,
+                            title: `${DOC_LABELS[key]}${key === "idProof" && a.idProofType ? ` (${a.idProofType})` : ""}`,
+                          })
+                        }
+                      >
                         View
                       </button>
                     </li>

@@ -30,12 +30,7 @@ export default function OrgHeader() {
       <div className="bg-brand-900 text-[11px] leading-snug text-brand-100 sm:text-xs">
         <div className="mx-auto flex max-w-6xl flex-col items-center gap-1.5 px-4 py-2 text-center sm:flex-row sm:justify-between sm:px-6 sm:text-left">
           <p>
-            <span lang="hi" className="block">
-              {ORG.nitiHi}: <span className="font-semibold text-white">{ORG.nitiId}</span>
-            </span>
-            <span className="block">
-              {ORG.nitiEn}: <span className="font-semibold text-white">{ORG.nitiId}</span>
-            </span>
+            <span lang="hi">{ORG.nitiHi}</span> / {ORG.nitiEn}: <span className="font-semibold text-white">{ORG.nitiId}</span>
           </p>
           <p className="sm:text-right">
             <span lang="hi" className="block">{ORG.estdHi}</span>

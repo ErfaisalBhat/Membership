@@ -55,7 +55,7 @@ async function generateReceipt(member, payment) {
   const rows = [
     ["Received from", member.name],
     ["Membership ID", member.membershipId],
-    ["Towards", `${type ? type.label : member.membershipType} – ${payment.kind === "RENEWAL" ? "Renewal" : "New membership"}`],
+    ["Towards", `${type ? type.shortLabel : member.membershipType} – ${payment.kind === "RENEWAL" ? "Renewal" : "New membership"}`],
     ["Membership period", period],
     ["Payment mode", payment.mode],
     ["Transaction reference", payment.reference],

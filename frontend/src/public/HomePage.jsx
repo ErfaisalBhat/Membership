@@ -4,12 +4,13 @@ import { Alert, Spinner } from "../ui/form";
 import Icon from "../ui/icons";
 import PlanCards from "./PlanCards";
 
+// The order of the join page: details, then payment, then review.
 const STEPS = [
-  { title: "Choose a plan", text: "Annual, Life or Institutional membership." },
+  { title: "Choose a plan", text: "Pick the plan that fits you." },
   { title: "Verify your email", text: "We send a 6-digit code. Your ID card is delivered to this address." },
   { title: "Fill the form", text: "Your details, address, affiliation and documents (photo, signature, ID)." },
-  { title: "Application review", text: "The Membership Section reviews your application and emails you the result." },
-  { title: "Pay online", text: "Once approved, pay the fee. Your membership number and ID card are issued as soon as the payment is confirmed." },
+  { title: "Pay online", text: "Pay the fee by UPI, card or net banking." },
+  { title: "Application review", text: "The Membership Section reviews your application. Once approved, your membership number and ID card are emailed to you." },
 ];
 
 export default function HomePage() {
@@ -23,12 +24,11 @@ export default function HomePage() {
       <section className="border-b border-slate-200 bg-white">
         <div className="mx-auto grid max-w-6xl gap-10 px-4 py-14 sm:px-6 lg:grid-cols-[1.4fr_1fr] lg:items-center lg:py-20">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-wider text-brand-600">{config.orgCode} Membership</p>
-            <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">Become a member of the {config.orgName}</h1>
+            <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">Become a member</h1>
             <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-600">{config.content.about}</p>
             <div className="mt-8 flex flex-wrap gap-3">
               <Link to="/join" className="rounded-md bg-brand-700 px-5 py-2.5 text-sm font-medium text-white shadow-xs hover:bg-brand-800">
-                Become a member
+                Apply now
               </Link>
               <Link to="/account" className="rounded-md border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
                 Renew or download my card

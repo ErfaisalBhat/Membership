@@ -43,7 +43,6 @@ function OrderDetail({ order, onChange }) {
       {order.failureReason && <Alert kind={order.status === "PAID" || order.status === "CREATED" ? "warning" : "info"}>{order.failureReason}</Alert>}
       <Details
         rows={[
-          ["Order number", <span className="font-mono">{order.orderNo}</span>],
           ["Email", order.email],
           ["Gateway", order.provider],
           ["Gateway payment ID", order.providerPaymentId],

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { ApiError, api, joinTokenStore } from "../api/client";
 import { typeInfo, useConfig } from "../api/useConfig";
 import { formatDate, formatMoney } from "../shared/format";
@@ -61,6 +61,7 @@ function Stepper({ step }) {
 export default function JoinPage() {
   const { config, error: configError } = useConfig();
   const [params] = useSearchParams();
+  const location = useLocation();
   const [step, setStep] = useState("loading");
   const [plan, setPlan] = useState(params.get("type") || "");
   const [email, setEmail] = useState("");
@@ -213,14 +214,21 @@ export default function JoinPage() {
     }
   }, [step, email, plan, form]);
 
-  // A refresh (or the return from DigiLocker, ?dl=) continues where the applicant was: the
-  // verified email, the details typed so far and the application are picked up again.
-  // A new visit in a new tab starts from the plans.
+  // Arriving by a link inside the site (e.g. a plan on the home page) starts at the plan and
+  // email steps: an earlier application is found only by verifying the email (see verifyCode).
+  // A refresh, a direct visit, or the return from DigiLocker (?dl=) continues where the applicant
+  // was: verified email, Aadhaar / PAN verification and the details typed so far.
+  // Nothing typed is thrown away: the draft (per email) and the DigiLocker / PAN verifications
+  // (kept on the server per email) come back as soon as the same email is verified.
   useEffect(() => {
+    const inSiteLink = location.key !== "default"; // "default" = the page was (re)loaded
+    if (inSiteLink && !params.get("dl")) {
+      joinTokenStore.clear();
+      return setStep(params.get("continue") ? "email" : "plan");
+    }
     if (!joinTokenStore.get()) {
-      clearDraft();
-      // ?dl= without a session (e.g. DigiLocker opened in another tab), or ?continue=1 (link in
-      // an email): verify the email first.
+      // ?dl= without a session (DigiLocker opened in another tab), or ?continue=1 (link in an
+      // email): verify the email first.
       return setStep(params.get("dl") || params.get("continue") ? "email" : "plan");
     }
     api("/join/application", { auth: "join" })
@@ -329,13 +337,17 @@ export default function JoinPage() {
     if (res.digilocker) setSavedDigi(res.digilocker);
     if (res.pan) setSavedPan(res.pan);
     if (params.get("dl")) return completeDigilocker(params.get("dl"));
-    if (res.application && res.application.status !== "REJECTED") {
+    // An earlier application of this email is shown only for the plan chosen now (or when no
+    // plan was chosen). One that is paid and under review is always shown, so no payment is lost.
+    const earlier = res.application;
+    const relevant = earlier && (!plan || earlier.membershipType === plan || ["PENDING", "APPROVED"].includes(earlier.status));
+    if (relevant && earlier.status !== "REJECTED") {
       // Details saved and waiting for payment, or paid and under review.
-      setApplication(res.application);
-      setStep(stepFor(res.application));
-    } else if (res.application) {
+      setApplication(earlier);
+      setStep(stepFor(earlier));
+    } else if (relevant) {
       // Rejected: show the reason; "Start a new application" continues from there.
-      setApplication(res.application);
+      setApplication(earlier);
       setStep("review");
     } else if (res.paidOrder) {
       // A payment not used yet: fill in the details for the plan that was paid for.
@@ -565,7 +577,6 @@ export default function JoinPage() {
     <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6" ref={topRef}>
       <div className="mb-6">
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Become a member</h1>
-        <p className="mt-1 text-sm text-slate-500">{config.orgName}</p>
       </div>
       {step !== "done" && <Stepper step={step} />}
       {banner && (
@@ -741,13 +752,13 @@ export default function JoinPage() {
 
           {digi && (
             <Alert kind="success" title="Details filled from your Aadhaar">
-              Verified through DigiLocker (Aadhaar ending {digi.last4 || "····"}). The details taken from your Aadhaar cannot be changed. Please fill in
-              anything your Aadhaar does not include.
+              Verified through DigiLocker (Aadhaar ending {digi.last4 || "····"}). The greyed-out fields and the photograph come from your Aadhaar
+              and cannot be changed. Please fill in the rest.
             </Alert>
           )}
           {!digi && digiNotice && (
             <Alert kind="warning" title="Please fill the form manually">
-              {digiNotice} Fill in your details below and upload your documents; the membership office will review them.
+              {digiNotice} The membership office will review your documents.
               {digilockerOn && digiAvailable !== false && (
                 <button type="button" className={`${buttonClass.ghost} ml-1`} disabled={busy} onClick={startDigilocker}>
                   Try DigiLocker again
@@ -818,12 +829,13 @@ export default function JoinPage() {
             <div className="mb-5">
               {application.status === "APPROVED" ? (
                 <Alert kind="success" title="Your application has been approved">
-                  {application.reviewedAt ? `Approved on ${formatDate(application.reviewedAt)}. ` : ""}Pay the membership fee to complete your
-                  membership.
+                  {application.reviewedAt ? `Approved on ${formatDate(application.reviewedAt)}. ` : ""}Pay the membership fee: your membership number
+                  and ID card are issued as soon as the payment is confirmed.
                 </Alert>
               ) : (
                 <Alert kind="info" title="Your details are saved">
-                  Pay the membership fee to send your application to the membership office for review.
+                  Pay the membership fee to send your application to the membership office for review. Once it is approved, your membership
+                  number, ID card and receipt are emailed to you.
                 </Alert>
               )}
             </div>
@@ -849,9 +861,7 @@ export default function JoinPage() {
               </div>
             )}
             <p className="mt-5 border-t border-slate-100 pt-4 text-xs text-slate-500">
-              {application.status === "UNPAID"
-                ? "After payment, the membership office reviews your application. Once it is approved, your membership number, ID card and receipt are emailed to you. "
-                : `Please pay within ${config.pendingApplicationDays} days of approval. `}
+              {application.status === "UNPAID" ? "" : `Please pay within ${config.pendingApplicationDays} days of approval. `}
               If you leave now, come back to this page and verify the same email to continue.
             </p>
           </Card>
@@ -866,8 +876,8 @@ export default function JoinPage() {
               {!config.onlinePayments.enabled && config.paymentPages?.[application.membershipType] ? (
                 <div className="space-y-4">
                   <p className="text-sm text-slate-600">
-                    Pay on the Zoho payment page for <strong>{application.typeLabel}</strong>. Please use <strong>{application.email}</strong> as your
-                    email there, so your payment is matched to your application.
+                    Pay on the Zoho payment page. Please use <strong>{application.email}</strong> as your email there, so your payment is matched to
+                    your application.
                   </p>
                   <a
                     href={config.paymentPages[application.membershipType]}
@@ -883,7 +893,7 @@ export default function JoinPage() {
                       }
                     }}
                   >
-                    Pay {formatMoney(application.amount)} on Zoho
+                    Pay on Zoho
                   </a>
                   {pagePaying && (
                     <p className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
@@ -906,13 +916,10 @@ export default function JoinPage() {
                 <Checkout checkout={checkout} onResult={onResult} onCancel={onCancel} />
               ) : (
                 <button type="button" className={`${buttonClass.primary} w-full`} disabled={busy} onClick={pay}>
-                  {busy ? "Please wait…" : `Pay ${formatMoney(application.amount)}`}
+                  {busy ? "Please wait…" : "Pay now"}
                 </button>
               )}
-              <p className="text-xs text-slate-500">
-                UPI, cards and net banking are accepted.
-                {application.status === "APPROVED" ? " Your membership number and ID card are issued as soon as the payment is confirmed." : ""}
-              </p>
+              <p className="text-xs text-slate-500">UPI, cards and net banking are accepted.</p>
             </div>
           </Card>
         </div>
