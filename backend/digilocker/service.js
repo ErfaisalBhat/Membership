@@ -14,7 +14,15 @@ const { FRONTEND_URL, ORG_CODE } = require("../config/membership");
 //   complete() -> asks Cashfree for the Aadhaar details and returns them to fill the form
 // Whatever goes wrong, the applicant is told why and fills the form by hand instead.
 
-const hasPhoto = (a) => !!(a.photo && a.photo.data && a.photo.data.length);
+// The photo bytes as a Buffer. After toObject() Mongoose gives a BSON Binary, which
+// Buffer.from() silently turns into an empty buffer, so it is unwrapped here.
+function photoBytes(a) {
+  const d = a && a.photo && a.photo.data;
+  if (!d) return Buffer.alloc(0);
+  if (d._bsontype === "Binary") return Buffer.from(d.buffer).subarray(0, d.position);
+  return Buffer.from(d);
+}
+const hasPhoto = (a) => photoBytes(a).length > 0;
 
 // What the join page gets: the details to fill in, which fields to lock, and the Aadhaar
 // photo as a data: URL to show in place of the photograph upload.
@@ -25,7 +33,7 @@ function publicResult(v) {
     verificationId: v.verificationId,
     last4: a.last4 || "",
     prefill: { name: a.name, dob: a.dob, gender: a.gender, fatherName: a.fatherName, address: a.address, mobile: a.mobile || "" },
-    photo: hasPhoto(a) ? `data:${a.photo.mimeType};base64,${Buffer.from(a.photo.data).toString("base64")}` : "",
+    photo: hasPhoto(a) ? `data:${a.photo.mimeType};base64,${photoBytes(a).toString("base64")}` : "",
     locked: lockedPaths(a),
   };
 }
@@ -42,7 +50,7 @@ function applyVerified(input, v) {
     input.address.line2 = ad.line2 || "";
   }
   for (const k of ["city", "state", "pincode"]) if (ad[k]) input.address[k] = ad[k];
-  if (!input.whatsapp && a.mobile) input.whatsapp = a.mobile;
+  if (a.mobile) input.whatsapp = a.mobile;
 }
 
 // The Aadhaar photo written to the uploads folder, shaped like an uploaded file so it is
@@ -50,7 +58,7 @@ function applyVerified(input, v) {
 async function photoFile(v) {
   const a = v.aadhaar || {};
   if (!hasPhoto(a)) return null;
-  const data = Buffer.from(a.photo.data);
+  const data = photoBytes(a);
   const ext = a.photo.mimeType === "image/png" ? ".png" : ".jpg";
   const filename = crypto.randomBytes(16).toString("hex") + ext;
   const fullPath = filePath(filename);

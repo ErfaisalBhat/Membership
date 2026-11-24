@@ -147,7 +147,7 @@ export default function MemberDetailPage() {
             <Details
               rows={[
                 ["Email", member.email],
-                ["WhatsApp", member.whatsapp],
+                ["Number", member.whatsapp],
                 ...(isInstitution
                   ? [["Authorized contact person", member.contactPerson]]
                   : [

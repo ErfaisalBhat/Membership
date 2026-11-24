@@ -126,7 +126,7 @@ export default function PersonFields({
         ) : (
           text("email", "Email", { type: "email" })
         )}
-        {text("whatsapp", "WhatsApp number", { type: "tel", inputMode: "numeric", placeholder: "10-digit mobile number" })}
+        {text("whatsapp", "Number", { type: "tel", inputMode: "numeric", placeholder: "10-digit mobile number" })}
         {text("name", isInstitution ? "Institution name" : "Name", { className: "sm:col-span-2", hint: isInstitution ? undefined : "As it should appear on the ID card." })}
         {isInstitution ? (
           text("contactPerson", "Authorized contact person")

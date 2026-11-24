@@ -336,7 +336,7 @@ export default function ApplicationDetailPage() {
                     : "Not verified: details were entered manually. Check them against the uploaded ID card.",
                 ],
                 ["Email (verified)", a.email],
-                ["WhatsApp", a.whatsapp],
+                ["Number", a.whatsapp],
                 ...(isInstitution
                   ? [["Authorized contact person", a.contactPerson]]
                   : [

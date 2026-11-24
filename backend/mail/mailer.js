@@ -375,7 +375,7 @@ async function sendNewApplicationAdminEmail(application) {
     greeting: "Membership Section",
     blocks: [
       p("A new membership application has been submitted and is waiting for your review."),
-      table([...applicationRows(application), ["Email", application.email], ["WhatsApp", application.whatsapp]]),
+      table([...applicationRows(application), ["Email", application.email], ["Number", application.whatsapp]]),
       button("Review the application", `${FRONTEND_URL}/admin/applications/${application._id}`),
     ],
   });

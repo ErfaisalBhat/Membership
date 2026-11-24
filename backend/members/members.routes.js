@@ -92,7 +92,7 @@ router.get("/export.csv", async (req, res) => {
     return `"${s.replace(/"/g, '""')}"`;
   };
   const header = [
-    "Membership ID", "Name", "Contact Person", "Type", "Status", "Email", "WhatsApp",
+    "Membership ID", "Name", "Contact Person", "Type", "Status", "Email", "Number",
     "Gender", "Date of Birth", "Date of Joining", "Valid Till", "Address Line 1", "Address Line 2",
     "City", "State", "PIN Code", "Affiliated", "Institution", "Department", "Designation",
     "Affiliation State", "Listed Publicly", "Total Paid", "Remarks",

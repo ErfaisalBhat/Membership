@@ -170,6 +170,7 @@ function cleanStored(a = {}) {
 // anything Aadhaar doesn't have is left for the applicant to fill in).
 function lockedPaths(a = {}) {
   const paths = ["name", "dob", "gender", "fatherName"].filter((k) => a[k]);
+  if (a.mobile) paths.push("whatsapp");
   const ad = a.address || {};
   if (ad.line1) paths.push("address.line1", "address.line2");
   for (const k of ["city", "state", "pincode"]) if (ad[k]) paths.push(`address.${k}`);

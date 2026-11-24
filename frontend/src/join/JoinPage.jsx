@@ -93,7 +93,7 @@ export default function JoinPage() {
     setForm((f) => ({
       ...f,
       ...filled({ name: p.name, dob: p.dob, gender: p.gender, fatherName: p.fatherName }),
-      whatsapp: f.whatsapp || p.mobile || "", // Aadhaar mobile suggested; they can change it
+      whatsapp: p.mobile || f.whatsapp || "", // Aadhaar-linked mobile, locked when present
       address: { ...f.address, ...address },
       ...(type ? { membershipType: type } : {}),
     }));
@@ -782,7 +782,7 @@ export default function JoinPage() {
               rows={[
                 ["Name", application.name],
                 ["Email", application.email],
-                ["WhatsApp", application.whatsapp],
+                ["Number", application.whatsapp],
                 ["Membership type", application.typeLabel],
                 [
                   "Validity",

@@ -183,7 +183,7 @@ function EditDetails({ member, onSaved, onCancel }) {
     <form onSubmit={save} noValidate className="space-y-5">
       {error && <Alert>{error}</Alert>}
       <div className="grid gap-4 sm:grid-cols-2">
-        {input("whatsapp", "WhatsApp number", { inputMode: "numeric" })}
+        {input("whatsapp", "Number", { inputMode: "numeric" })}
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         {input("address.line1", "Address line 1", { maxLength: 30, className: "sm:col-span-2" })}
@@ -382,7 +382,7 @@ function Dashboard() {
                 <Details
                   rows={[
                     ["Email", member.email],
-                    ["WhatsApp", member.whatsapp],
+                    ["Number", member.whatsapp],
                     ...(isInstitution ? [["Authorized contact person", member.contactPerson]] : [["Date of birth", formatDate(member.dob)]]),
                     ["Address", [a.line1, a.line2, a.city, a.state && `${a.state} – ${a.pincode}`].filter(Boolean).join(", ")],
                     ["Affiliation", member.affiliated ? [af.designation, af.department, af.institution].filter(Boolean).join(", ") : "Not affiliated"],
