@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { api, apiBlob, downloadBlob } from "../api/client";
+import { api } from "../api/client";
 import { useConfig } from "../api/useConfig";
-import { formatDate, todayISO } from "../shared/format";
+import { formatDate } from "../shared/format";
 import StatusBadge from "../ui/StatusBadge";
 import Pagination from "../ui/Pagination";
-import { Alert, EmptyState, PageHeader, Spinner, buttonClass, inputClass } from "../ui/form";
+import { Alert, EmptyState, PageHeader, Spinner, inputClass } from "../ui/form";
 
 const FILTER_KEYS = ["search", "type", "status", "expiring"];
 
@@ -17,7 +17,6 @@ export default function MembersPage() {
   const [data, setData] = useState(null);
   const [stats, setStats] = useState(null);
   const [error, setError] = useState("");
-  const [exporting, setExporting] = useState(false);
 
   const query = new URLSearchParams();
   for (const k of FILTER_KEYS) if (params.get(k)) query.set(k, params.get(k));
@@ -60,18 +59,6 @@ export default function MembersPage() {
     api("/members/stats").then(setStats).catch(() => {});
   }, []);
 
-  async function exportCsv() {
-    setExporting(true);
-    try {
-      const blob = await apiBlob(`/members/export.csv?${filterQuery}`);
-      downloadBlob(blob, `members-${todayISO()}.csv`);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setExporting(false);
-    }
-  }
-
   const status = params.get("status") || "";
   const expiring = params.get("expiring") === "30";
   const hasFilters = FILTER_KEYS.some((k) => params.get(k));
@@ -86,14 +73,7 @@ export default function MembersPage() {
 
   return (
     <div>
-      <PageHeader
-        title="Members"
-        actions={
-          <button type="button" className={buttonClass.secondary} onClick={exportCsv} disabled={exporting}>
-            {exporting ? "Exporting…" : "Export CSV"}
-          </button>
-        }
-      />
+      <PageHeader title="Members" />
 
       <div className="space-y-4">
         <div className="-mx-1 flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200 px-1">

@@ -5,9 +5,9 @@ const { requireAdmin } = require("../auth/requireAdmin");
 const { MEMBERSHIP_TYPES } = require("../config/membership");
 const { validateMember, validatePayment } = require("./validateMember");
 const { nextMembershipId } = require("./membershipId");
-const { computeExpiry, todayIST, displayDate } = require("../shared/dates");
+const { computeExpiry, todayIST } = require("../shared/dates");
 const { buildMemberFilter, pagination } = require("./query");
-const { serializeMember, serializeRow, effectiveStatus } = require("./serialize");
+const { serializeMember, serializeRow } = require("./serialize");
 const { renewalPeriod } = require("./renewal");
 const { addPayment } = require("../payments/service");
 const Application = require("../join/Application");
@@ -78,44 +78,6 @@ router.get("/stats", async (req, res) => {
   const byType = Object.fromEntries(Object.keys(MEMBERSHIP_TYPES).map((k) => [k, 0]));
   for (const t of byTypeRaw) byType[t._id] = t.count;
   res.json({ total, active, expired, inactive, expiringSoon, byType });
-});
-
-// GET /api/members/export.csv  (same filters as the list)
-router.get("/export.csv", async (req, res) => {
-  const filter = buildMemberFilter(req.query, ADMIN_SEARCH_FIELDS);
-  const members = await Member.find(filter).sort({ membershipId: 1 }).lean();
-
-  // Prefix cells that Excel would treat as formulas.
-  const cell = (v) => {
-    let s = v == null ? "" : String(v);
-    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
-    return `"${s.replace(/"/g, '""')}"`;
-  };
-  const header = [
-    "Membership ID", "Name", "Contact Person", "PAN", "Type", "Status", "Email", "Number",
-    "Gender", "Date of Birth", "Date of Joining", "Valid Till", "Address Line 1", "Address Line 2",
-    "City", "State", "PIN Code", "Affiliated", "Institution", "Department", "Designation",
-    "Affiliation State", "Listed Publicly", "Total Paid", "Remarks",
-  ];
-  const lines = [header.map(cell).join(",")];
-  for (const m of members) {
-    const a = m.address || {};
-    const af = m.affiliation || {};
-    const paid = (m.payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
-    lines.push(
-      [
-        m.membershipId, m.name, m.contactPerson, (m.pan && m.pan.number) || "", MEMBERSHIP_TYPES[m.membershipType]?.label || m.membershipType,
-        effectiveStatus(m), m.email, m.whatsapp, m.gender, displayDate(m.dob), displayDate(m.joinDate),
-        m.expiryDate ? displayDate(m.expiryDate) : "Lifetime", a.line1, a.line2, a.city, a.state, a.pincode,
-        m.affiliated ? "Yes" : "No", af.institution, af.department, af.designation, af.state,
-        m.showInPublicList ? "Yes" : "No", paid, m.remarks,
-      ].map(cell).join(",")
-    );
-  }
-  const stamp = new Date().toISOString().slice(0, 10);
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="members-${stamp}.csv"`);
-  res.send("﻿" + lines.join("\r\n")); // BOM so Excel reads UTF-8 names correctly
 });
 
 // POST /api/members  (multipart: data=JSON, photo, signature, idProof)

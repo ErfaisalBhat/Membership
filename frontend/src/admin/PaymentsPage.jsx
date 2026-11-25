@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { api } from "../api/client";
-import { formatDate, formatMoney } from "../shared/format";
+import { api, apiBlob, downloadBlob } from "../api/client";
+import { formatDate, formatMoney, todayISO } from "../shared/format";
 import StatusBadge from "../ui/StatusBadge";
 import Pagination from "../ui/Pagination";
 import { Alert, Details, EmptyState, PageHeader, Spinner, buttonClass, inputClass } from "../ui/form";
@@ -84,6 +84,7 @@ export default function PaymentsPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [openId, setOpenId] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   function update(changes) {
     const next = new URLSearchParams(params);
@@ -102,27 +103,52 @@ export default function PaymentsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
 
+  // The list's filters (without the page), shared by the list and the CSV export.
+  const filters = new URLSearchParams();
+  if (tab === "attention") filters.set("attention", "1");
+  else if (tab) filters.set("status", tab);
+  if (purpose) filters.set("purpose", purpose);
+  if (search) filters.set("search", search);
+  const filterQuery = filters.toString();
+
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const blob = await apiBlob(`/admin/payments/export.csv?${filterQuery}`);
+      downloadBlob(blob, `payments-${todayISO()}.csv`);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setExporting(false);
+    }
+  }
+
   useEffect(() => {
     let alive = true;
     setData(null);
-    const q = new URLSearchParams({ page: String(page) });
-    if (tab === "attention") q.set("attention", "1");
-    else if (tab) q.set("status", tab);
-    if (purpose) q.set("purpose", purpose);
-    if (search) q.set("search", search);
+    const q = new URLSearchParams(filterQuery);
+    q.set("page", String(page));
     api(`/admin/payments?${q}`)
       .then((d) => alive && setData(d))
       .catch((e) => alive && setError(e.message));
     return () => {
       alive = false;
     };
-  }, [tab, purpose, search, page]);
+  }, [filterQuery, page]);
 
   const replaceOrder = (o) => setData((d) => ({ ...d, items: d.items.map((x) => (x._id === o._id ? { ...x, ...o } : x)) }));
 
   return (
     <div>
-      <PageHeader title="Payments" subtitle="Online payments for new memberships and renewals. Offline payments are listed on each member's page." />
+      <PageHeader
+        title="Payments"
+        subtitle="Online payments for new memberships and renewals. Offline payments are listed on each member's page."
+        actions={
+          <button type="button" className={buttonClass.secondary} onClick={exportCsv} disabled={exporting}>
+            {exporting ? "Exporting…" : "Export CSV"}
+          </button>
+        }
+      />
       <div className="space-y-4">
         <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200">
           {TABS.map(([key, label]) => (

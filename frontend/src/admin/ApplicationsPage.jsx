@@ -9,7 +9,6 @@ import { Alert, EmptyState, PageHeader, Spinner, inputClass } from "../ui/form";
 const TABS = [
   ["PENDING", "Paid, awaiting review"],
   ["UNPAID", "Not paid yet"],
-  ["APPROVED", "Approved, awaiting payment"],
   ["PAID", "Registered"],
   ["REJECTED", "Rejected"],
   ["CANCELLED", "Cancelled"],
@@ -18,7 +17,6 @@ const TABS = [
 const EMPTY = {
   PENDING: "No applications are waiting for review.",
   UNPAID: "No applicants are waiting to pay.",
-  APPROVED: "No approved applications are waiting for payment.",
 };
 
 // Online sign-ups: the applicant fills in the details and pays, then the admin reviews.
@@ -64,7 +62,7 @@ export default function ApplicationsPage() {
 
   return (
     <div>
-      <PageHeader title="Applications" subtitle="People who applied on the website. Review each application: approved applicants are emailed a link to pay, and become members once the payment is confirmed." />
+      <PageHeader title="Applications" subtitle="People who applied on the website. Applicants pay first; review each paid application, and when you approve it they become members and get their ID card by email." />
       <div className="space-y-4">
         <div className="flex gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-200">
           {TABS.map(([key, label]) => (
@@ -122,11 +120,7 @@ export default function ApplicationsPage() {
                       <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{formatMoney(a.amount)}</td>
                       <td className="whitespace-nowrap px-4 py-3 tabular-nums">{formatDate(a.createdAt)}</td>
                       <td className="px-4 py-3">
-                        {a.status === "APPROVED" && a.lastAttempt?.status === "FAILED" ? (
-                          <StatusBadge status="FAILED" label="Payment failed" />
-                        ) : (
-                          <StatusBadge status={a.status} />
-                        )}
+                        <StatusBadge status={a.status} />
                       </td>
                     </tr>
                   ))}

@@ -11,7 +11,7 @@ const { requireAdmin } = require("../auth/requireAdmin");
 const { validatePayment } = require("../members/validateMember");
 const { serializeApplication } = require("../members/serialize");
 const { pagination } = require("../members/query");
-const { todayIST } = require("../shared/dates");
+const { todayIST, displayDate } = require("../shared/dates");
 const { isDocumentField, filePath, removeStoredFiles } = require("../documents/upload");
 const { sendCardEmail, sendApplicationApprovedEmail, sendApplicationRejectedEmail, trySend } = require("../mail/mailer");
 const { providerByName, paymentsProblem, activeProvider } = require("../payments/provider");
@@ -279,17 +279,57 @@ router.post("/applications/:id/cancel", async (req, res) => {
 
 // ---------- Payments (online orders) ----------
 
-// GET /api/admin/payments?status=&purpose=&search=&attention=1&page=
-router.get("/payments", async (req, res) => {
-  const filter = { ...searchFilter(req.query, ["name", "email", "orderNo", "providerPaymentId", "receiptNo"]) };
-  const status = one(req.query.status);
+function paymentFilter(query) {
+  const filter = { ...searchFilter(query, ["name", "email", "orderNo", "providerPaymentId", "receiptNo"]) };
+  const status = one(query.status);
   if (["CREATED", "PAID", "FAILED"].includes(status)) filter.status = status;
-  const purpose = one(req.query.purpose);
+  const purpose = one(query.purpose);
   if (["NEW", "RENEWAL"].includes(purpose)) filter.purpose = purpose;
-  if (one(req.query.attention) === "1") {
+  if (one(query.attention) === "1") {
     filter.failureReason = { $ne: "" };
     filter.status = { $in: ["PAID", "CREATED"] };
   }
+  return filter;
+}
+
+// GET /api/admin/payments/export.csv  (same filters as the list)
+router.get("/payments/export.csv", async (req, res) => {
+  const orders = await PaymentOrder.find(paymentFilter(req.query)).sort({ createdAt: -1 }).lean();
+  const members = await Member.find({ _id: { $in: orders.map((o) => o.memberId).filter(Boolean) } }).select("membershipId").lean();
+  const membershipIds = new Map(members.map((m) => [String(m._id), m.membershipId]));
+
+  // Prefix cells that Excel would treat as formulas.
+  const cell = (v) => {
+    let s = v == null ? "" : String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+  const STATUS = { PAID: "Paid", CREATED: "In progress", FAILED: "Failed" };
+  const header = [
+    "Date", "Order No", "Name", "Email", "Membership ID", "For", "Plan", "Amount", "Currency", "Status",
+    "Paid On", "Receipt No", "Method", "Gateway", "Gateway Payment ID", "Period From", "Period To", "Note",
+  ];
+  const lines = [header.map(cell).join(",")];
+  for (const o of orders) {
+    lines.push(
+      [
+        displayDate(o.createdAt), o.orderNo, o.name, o.email, (o.memberId && membershipIds.get(String(o.memberId))) || "",
+        o.purpose === "NEW" ? "New membership" : "Renewal", MEMBERSHIP_TYPES[o.membershipType]?.label || o.membershipType,
+        o.amount, o.currency, STATUS[o.status] || o.status, o.paidAt ? displayDate(o.paidAt) : "", o.receiptNo,
+        o.paymentMethod, o.provider, o.providerPaymentId, o.periodFrom ? displayDate(o.periodFrom) : "",
+        o.periodFrom ? (o.periodTo ? displayDate(o.periodTo) : "Lifetime") : "", o.failureReason,
+      ].map(cell).join(",")
+    );
+  }
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="payments-${stamp}.csv"`);
+  res.send("﻿" + lines.join("\r\n")); // BOM so Excel reads UTF-8 names correctly
+});
+
+// GET /api/admin/payments?status=&purpose=&search=&attention=1&page=
+router.get("/payments", async (req, res) => {
+  const filter = paymentFilter(req.query);
   const { page, limit, skip } = pagination(req.query);
   const [items, total] = await Promise.all([
     PaymentOrder.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
