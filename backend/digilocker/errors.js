@@ -11,13 +11,14 @@ class DigilockerError extends Error {
   }
 }
 
-// What the applicant is told. In every case they can still fill the form by hand.
+// What the applicant is told. Only UNAVAILABLE (Cashfree down / out of credits) switches to the
+// manual form, silently; for the others the applicant is asked to verify with DigiLocker again.
 const MESSAGES = {
   UNAVAILABLE: "DigiLocker verification is not available right now.",
-  DENIED: "You did not allow access to your Aadhaar in DigiLocker.",
-  EXPIRED: "The DigiLocker session expired before it was completed (it lasts 10 minutes).",
-  PENDING: "The DigiLocker verification was not completed.",
-  NOT_LINKED: "Your Aadhaar is not available in your DigiLocker account.",
+  DENIED: "You did not allow access to your Aadhaar in DigiLocker. Please try again and allow access.",
+  EXPIRED: "The DigiLocker session expired before it was completed (it lasts 10 minutes). Please try again.",
+  PENDING: "The DigiLocker verification was not completed. Please try again.",
+  NOT_LINKED: "Your Aadhaar is not available in your DigiLocker account. Please add your Aadhaar in the DigiLocker app and try again.",
 };
 
 module.exports = { DigilockerError, MESSAGES };

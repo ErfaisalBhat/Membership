@@ -9,13 +9,30 @@ const { normalizePan, panProblem, holderType } = require("./pan");
 // Personal PANs (Individual / HUF) are refused, both by the PAN itself and by the type Cashfree reports.
 
 class PanCheckError extends Error {
-  constructor(message, status = 400) {
+  constructor(message, status = 400, code = "") {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
+// Cashfree down or out of credits: the PAN is then typed by hand (no message to the applicant)
+// and verification is not required. Cashfree is not asked again for DOWN_MS; a submission is
+// accepted unverified for GRACE_MS after the last failure, so a form being filled is not refused.
+const DOWN_MS = 5 * 60 * 1000;
+const GRACE_MS = 60 * 60 * 1000;
+let lastDownAt = 0;
+function markDown(reason) {
+  lastDownAt = Date.now();
+  console.warn(`[PAN] Cashfree unavailable — PAN typed by hand: ${reason}`);
+}
+const isDown = () => Date.now() - lastDownAt < DOWN_MS;
+const unavailable = () => new PanCheckError("PAN verification is not available right now.", 503, "PAN_UNAVAILABLE");
+
 const enabled = () => !panProviderProblem();
+const available = () => enabled() && !isDown();
+// Must the Institutional applicant verify the PAN before submitting?
+const required = () => enabled() && Date.now() - lastDownAt >= GRACE_MS;
 const currentProvider = () => (panProvider() ? panProvider().name : "");
 
 function publicResult(v) {
@@ -33,7 +50,7 @@ async function verify(email, rawPan) {
   const pan = normalizePan(rawPan);
   const problem = panProblem(pan);
   if (problem) throw new PanCheckError(problem);
-  if (!enabled()) throw new PanCheckError("PAN verification is not available right now. Please fill in the details by hand.", 503);
+  if (!enabled()) throw unavailable();
 
   // Already verified in the last 30 days (same applicant again, or another applicant from the
   // same institution): reuse it instead of paying Cashfree for the same PAN twice.
@@ -54,12 +71,14 @@ async function verify(email, rawPan) {
     return publicResult(reused);
   }
 
+  if (isDown()) throw unavailable();
   let r;
   try {
     r = await panProvider().verify(pan);
   } catch (err) {
     console.error("PAN verification failed:", err.message);
-    throw new PanCheckError("PAN verification is not available right now. Please try again in a few minutes.", 503);
+    markDown(err.message);
+    throw unavailable();
   }
   if (!r.valid) throw new PanCheckError("This PAN could not be verified. Please check the number and try again.");
   // Cashfree's holder type, e.g. "Individual or Person", "HUF", "Body of Individuals (BOI)".
@@ -98,4 +117,4 @@ function applyVerified(input, v) {
   if (v.registeredName) input.name = v.registeredName;
 }
 
-module.exports = { verify, findVerified, latestVerified, applyVerified, enabled, PanCheckError };
+module.exports = { verify, findVerified, latestVerified, applyVerified, enabled, available, required, PanCheckError };

@@ -12,7 +12,8 @@ const { FRONTEND_URL, ORG_CODE } = require("../config/membership");
 //   start()    -> URL of the DigiLocker consent page; DigiLocker sends the applicant back to
 //                 /join?type=<plan>&dl=<verificationId>
 //   complete() -> asks Cashfree for the Aadhaar details and returns them to fill the form
-// Whatever goes wrong, the applicant is told why and fills the form by hand instead.
+// Only when Cashfree is down or out of credits (kind UNAVAILABLE) does the applicant fill the
+// form by hand; otherwise (denied, expired, not finished) they are asked to try DigiLocker again.
 
 // The photo bytes as a Buffer. After toObject() Mongoose gives a BSON Binary, which
 // Buffer.from() silently turns into an empty buffer, so it is unwrapped here.
@@ -118,6 +119,7 @@ async function complete(email, verificationId) {
     record.failureDetail = String(err.message).slice(0, 300);
     await record.save();
     console.error(`[DIGILOCKER] complete failed for ${record.verificationId} (${kind}):`, err.message);
+    if (kind === "UNAVAILABLE") health.markDown(err.message);
     return { verified: false, kind, message: MESSAGES[kind] || MESSAGES.UNAVAILABLE };
   }
 }

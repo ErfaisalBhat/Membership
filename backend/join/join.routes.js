@@ -175,7 +175,7 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
       await removeUploaded(files);
       return res.status(400).json({
         code: "DIGILOCKER_EXPIRED",
-        message: "Your DigiLocker verification has expired. Please verify with DigiLocker again, or fill the form manually.",
+        message: "Your DigiLocker verification has expired. Please verify with DigiLocker again.",
       });
     }
     if (verified) {
@@ -212,7 +212,7 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
         verificationId: panVerified.verificationId,
         provider: panVerified.provider,
       });
-    } else if (panCheck.enabled() && !errors.pan) {
+    } else if (panCheck.required() && !errors.pan) {
       errors.pan = "Please verify the PAN of the institution.";
     }
   }
@@ -271,9 +271,12 @@ router.post("/digilocker/start", otpLimiter, requireJoin, async (req, res) => {
   try {
     res.json(await digilocker.start(req.joinEmail, type));
   } catch (err) {
-    res.status(503).json({
-      code: "DIGILOCKER_UNAVAILABLE",
-      message: `${DIGILOCKER_MESSAGES.UNAVAILABLE} Please fill the form manually; the membership office will review your documents.`,
+    // Cashfree down / out of credits (kind UNAVAILABLE): the join page silently switches to the
+    // manual form. Anything else (e.g. the session ran out) keeps the applicant on DigiLocker.
+    const kind = err.kind || "UNAVAILABLE";
+    res.status(kind === "UNAVAILABLE" ? 503 : 400).json({
+      code: kind === "UNAVAILABLE" ? "DIGILOCKER_UNAVAILABLE" : `DIGILOCKER_${kind}`,
+      message: DIGILOCKER_MESSAGES[kind] || DIGILOCKER_MESSAGES.UNAVAILABLE,
     });
   }
 });
@@ -293,6 +296,7 @@ router.post("/pan/verify", otpLimiter, requireJoin, async (req, res) => {
     res.json(await panCheck.verify(req.joinEmail, req.body && req.body.pan));
   } catch (err) {
     if (!(err instanceof panCheck.PanCheckError)) throw err;
+    if (err.code === "PAN_UNAVAILABLE") return res.status(503).json({ code: err.code, message: err.message });
     res.status(err.status).json({ message: err.message, errors: { pan: err.message } });
   }
 });

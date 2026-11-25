@@ -18,7 +18,7 @@ const {
 const content = require("../config/content");
 const { activeProvider, paymentsProblem } = require("../payments/provider");
 const { digilockerProblem } = require("../digilocker/provider");
-const { panProviderProblem } = require("../pan/provider");
+const panCheck = require("../pan/service");
 const { buildMemberFilter, pagination } = require("../members/query");
 const { serializePublicRow, effectiveStatus, typeLabel } = require("../members/serialize");
 const { filePath } = require("../documents/upload");
@@ -50,7 +50,7 @@ router.get("/config", (req, res) => {
       enabled: !digilockerProblem(),
       types: DIGILOCKER_TYPES,
     },
-    panVerification: { enabled: !panProviderProblem() }, // Institutional join form
+    panVerification: { enabled: panCheck.available() }, // Institutional join form; off while Cashfree is down
   });
 });
 

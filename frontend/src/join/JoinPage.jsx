@@ -90,6 +90,7 @@ export default function JoinPage() {
   // ({ verificationId, pan, name, panType, locked }); fills and locks the PAN and institution name.
   const [savedPan, setSavedPan] = useState(null);
   const [panBusy, setPanBusy] = useState(false);
+  const [panDown, setPanDown] = useState(false); // Cashfree down / out of credits: PAN typed by hand
   const panInfo = plan === "INSTITUTIONAL" ? savedPan : null;
   const topRef = useRef(null);
 
@@ -117,7 +118,11 @@ export default function JoinPage() {
       clearError("pan");
       clearError("name");
     } catch (err) {
-      setErrors((e) => ({ ...e, pan: err.errors?.pan || err.message }));
+      if (err.code === "PAN_UNAVAILABLE") {
+        // Cashfree down or out of credits: quietly let the PAN be typed by hand.
+        setPanDown(true);
+        clearError("pan");
+      } else setErrors((e) => ({ ...e, pan: err.errors?.pan || err.message }));
     } finally {
       setPanBusy(false);
     }
@@ -150,26 +155,40 @@ export default function JoinPage() {
     setDigiNotice("");
   }
 
-  // Back from DigiLocker (/join?type=<plan>&dl=<id>): fill the form, or fall back to manual.
+  // Cashfree is down or out of credits: switch to the manual form without telling the applicant.
+  function goManual() {
+    setDigi(null);
+    setDigiAvailable(false);
+    setManual(true);
+    setDigiNotice("");
+  }
+
+  // Back from DigiLocker (/join?type=<plan>&dl=<id>): fill the form. If the applicant denied,
+  // didn't finish or the session expired, they are asked to use DigiLocker again; only when
+  // Cashfree itself can't be used do they get the manual form.
   async function completeDigilocker(verificationId) {
     let res;
     try {
       res = await api("/join/digilocker/complete", { method: "POST", json: { verificationId }, auth: "join" });
     } catch (err) {
       if (err.status === 401) return; // join session ended: handled by the listener below
-      res = { verified: false, message: "We could not finish the DigiLocker verification." };
+      res = { verified: false, kind: "PENDING", message: "We could not finish the DigiLocker verification. Please try again." };
     }
     if (res.email) {
       setEmail(res.email);
       restoreDraft(res.email);
     }
     const type = params.get("type") || "";
+    if (type) setPlan(type);
     if (res.verified) applyDigilocker(res, type);
     else {
-      setDigi(null);
-      setManual(true);
-      setDigiNotice(res.message);
       if (type) setForm((f) => ({ ...f, membershipType: type }));
+      if (res.kind === "UNAVAILABLE") goManual();
+      else {
+        setDigi(null);
+        setManual(false);
+        setDigiNotice(res.message);
+      }
     }
     setStep("details");
   }
@@ -295,7 +314,7 @@ export default function JoinPage() {
     } else if (digi) setDigi(null);
   }
 
-  // Leaves for the DigiLocker consent page; if it can't be used, fill the form by hand.
+  // Leaves for the DigiLocker consent page; only if Cashfree can't be used, fill the form by hand.
   async function startDigilocker() {
     setBusy(true);
     setDigiNotice("");
@@ -310,8 +329,9 @@ export default function JoinPage() {
         setBusy(false);
         return;
       }
-      setManual(true);
-      setDigiNotice(err.message);
+      if (err.status === 401) return setBusy(false); // join session ended: handled by the listener below
+      if (err.code === "DIGILOCKER_UNAVAILABLE") goManual();
+      else setDigiNotice(err.message); // e.g. too many tries: stay on DigiLocker
       setBusy(false);
     }
   }
@@ -370,6 +390,11 @@ export default function JoinPage() {
       applyDigilocker(verified, type);
     } else {
       setDigi(null);
+      // A new plan starts with DigiLocker again: Cashfree is asked afresh, and the manual form
+      // comes only if it is still down or out of credits.
+      setManual(false);
+      setDigiAvailable(null);
+      setDigiNotice("");
       setForm((f) => ({ ...f, membershipType: type }));
     }
     setStep("details");
@@ -427,6 +452,7 @@ export default function JoinPage() {
         setDigi(null);
         setSavedDigi(null);
         setManual(false);
+        setDigiAvailable(null); // ask Cashfree again before showing the DigiLocker screen
       }
       setBanner(err.message);
       scrollTop();
@@ -724,6 +750,13 @@ export default function JoinPage() {
             Log in to DigiLocker with your Aadhaar and allow access. Your name, date of birth, gender, father's name, address and photograph are
             taken from your Aadhaar, and you do not need to upload an ID card. Only the last 4 digits of your Aadhaar number are kept.
           </p>
+          {digiNotice && (
+            <div className="mt-4">
+              <Alert kind="warning" onClose={() => setDigiNotice("")}>
+                {digiNotice}
+              </Alert>
+            </div>
+          )}
           <div className="mt-5 flex flex-col gap-2 sm:flex-row">
             <button type="button" className={buttonClass.primary} disabled={busy} onClick={startDigilocker}>
               {busy ? "Opening DigiLocker…" : "Continue with DigiLocker"}
@@ -756,16 +789,6 @@ export default function JoinPage() {
               and cannot be changed. Please fill in the rest.
             </Alert>
           )}
-          {!digi && digiNotice && (
-            <Alert kind="warning" title="Please fill the form manually">
-              {digiNotice} The membership office will review your documents.
-              {digilockerOn && digiAvailable !== false && (
-                <button type="button" className={`${buttonClass.ghost} ml-1`} disabled={busy} onClick={startDigilocker}>
-                  Try DigiLocker again
-                </button>
-              )}
-            </Alert>
-          )}
 
           <PersonFields
             form={{ ...form, membershipType: plan }}
@@ -778,7 +801,7 @@ export default function JoinPage() {
             locked={digi?.locked || panInfo?.locked || []}
             aadhaarVerified={!!digi}
             aadhaarPhoto={digi?.photo || ""}
-            onVerifyPan={config.panVerification?.enabled ? verifyPan : null}
+            onVerifyPan={config.panVerification?.enabled && !panDown ? verifyPan : null}
             panBusy={panBusy}
             panInfo={panInfo}
             documentsNote="Your documents are stored privately and are only seen by the membership office. If you reload this page, choose the files again."
