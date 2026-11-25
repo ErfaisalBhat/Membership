@@ -77,8 +77,14 @@ const SOCIAL_LINKS = [
   .filter(([, url]) => url)
   .map(([label, url]) => ({ label, url }));
 
+// True only for a real plan key. MEMBERSHIP_TYPES[key] alone is not enough for keys that come
+// from a request: "constructor", "toString", "__proto__" … are inherited from Object.prototype
+// and would pass such a check.
+const isMembershipType = (key) => typeof key === "string" && Object.hasOwn(MEMBERSHIP_TYPES, key);
+
 module.exports = {
   MEMBERSHIP_TYPES,
+  isMembershipType,
   STATUSES,
   GENDERS,
   ID_PROOF_TYPES,

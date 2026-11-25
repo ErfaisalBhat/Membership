@@ -1,4 +1,4 @@
-const { MEMBERSHIP_TYPES, GENDERS, ID_PROOF_TYPES, PAYMENT_MODES } = require("../config/membership");
+const { isMembershipType, GENDERS, ID_PROOF_TYPES, PAYMENT_MODES } = require("../config/membership");
 const { parseDateOnly, todayIST, ageOn } = require("../shared/dates");
 const { AADHAAR_LINE_MAX } = require("../digilocker/aadhaar");
 const { normalizePan, panProblem, holderType } = require("../pan/pan");
@@ -113,7 +113,7 @@ function validateMember(input, { files = {}, existing = null, mode = "admin", aa
   aadhaarVerified = aadhaarVerified || !!(existing && existing.aadhaar && existing.aadhaar.verified);
 
   const type = isNew ? s(input.membershipType) : existing.membershipType;
-  if (!MEMBERSHIP_TYPES[type]) errors.membershipType = "Select a membership type.";
+  if (!isMembershipType(type)) errors.membershipType = "Select a membership type.";
   data.membershipType = type;
   const isInstitution = type === "INSTITUTIONAL";
 

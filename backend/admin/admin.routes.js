@@ -12,7 +12,7 @@ const { validatePayment } = require("../members/validateMember");
 const { serializeApplication } = require("../members/serialize");
 const { pagination } = require("../members/query");
 const { todayIST } = require("../shared/dates");
-const { DOCUMENT_FIELDS, filePath, removeStoredFiles } = require("../documents/upload");
+const { isDocumentField, filePath, removeStoredFiles } = require("../documents/upload");
 const { sendCardEmail, sendApplicationApprovedEmail, sendApplicationRejectedEmail, trySend } = require("../mail/mailer");
 const { providerByName, paymentsProblem, activeProvider } = require("../payments/provider");
 const { createMemberFromApplication, registerPaidApplication, confirmFromBrowser, serializeOrder } = require("../payments/service");
@@ -122,7 +122,7 @@ router.get("/applications/:id", async (req, res) => {
 
 // GET /api/admin/applications/:id/files/:kind
 router.get("/applications/:id/files/:kind", async (req, res) => {
-  if (!DOCUMENT_FIELDS[req.params.kind]) return res.status(404).json({ message: "Unknown document." });
+  if (!isDocumentField(req.params.kind)) return res.status(404).json({ message: "Unknown document." });
   const application = await loadById(Application, req.params.id, res, "Application");
   if (!application) return;
   const doc = application.documents && application.documents[req.params.kind];

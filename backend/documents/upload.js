@@ -15,6 +15,10 @@ const DOCUMENT_FIELDS = {
   idProof: { label: "Valid ID card", types: IMAGE_OR_PDF },
 };
 
+// A document kind from a request (URL or upload field): own keys only, never inherited ones
+// such as "constructor".
+const isDocumentField = (key) => typeof key === "string" && Object.hasOwn(DOCUMENT_FIELDS, key);
+
 const EXT = { "image/jpeg": ".jpg", "image/png": ".png", "application/pdf": ".pdf" };
 const MAX_FILE_MB = 5;
 
@@ -32,8 +36,8 @@ const upload = multer({
   }),
   limits: { fileSize: MAX_FILE_MB * 1024 * 1024, files: 3, fields: 5 },
   fileFilter: (req, file, cb) => {
+    if (!isDocumentField(file.fieldname)) return cb(new UploadError("Unexpected file field."));
     const field = DOCUMENT_FIELDS[file.fieldname];
-    if (!field) return cb(new UploadError(`Unexpected file field "${file.fieldname}".`));
     if (!field.types.includes(file.mimetype)) {
       const allowed = field.types.includes("application/pdf") ? "a JPG, PNG or PDF file" : "a JPG or PNG image";
       return cb(new UploadError(`${field.label} must be ${allowed}.`));
@@ -106,5 +110,6 @@ module.exports = {
   removeStoredFiles,
   removeUploaded,
   DOCUMENT_FIELDS,
+  isDocumentField,
   MAX_FILE_MB,
 };

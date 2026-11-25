@@ -1,4 +1,4 @@
-const { MEMBERSHIP_TYPES, STATUSES } = require("../config/membership");
+const { isMembershipType, STATUSES } = require("../config/membership");
 const { todayIST, addDays } = require("../shared/dates");
 
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -12,7 +12,7 @@ function buildMemberFilter(query, searchFields) {
   const status = String(one(query.status) || "");
   const search = String(one(query.search) || "").trim().slice(0, 100);
 
-  if (MEMBERSHIP_TYPES[type]) filter.membershipType = type;
+  if (isMembershipType(type)) filter.membershipType = type;
 
   const today = todayIST();
   if (status === "EXPIRED") {

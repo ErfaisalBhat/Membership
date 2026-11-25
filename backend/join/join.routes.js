@@ -10,7 +10,7 @@ const { createCode, checkCode, CODE_MINUTES } = require("../auth/otp");
 const { createSession, requireJoin, JOIN_SESSION_HOURS } = require("../auth/sessions");
 const { sendCodeEmail, sendApplicationReceivedEmail, sendNewApplicationAdminEmail, trySend } = require("../mail/mailer");
 const { startCheckout, confirmFromBrowser, publicOrder, unusedPaidOrder } = require("../payments/service");
-const { MEMBERSHIP_TYPES, PAYMENT_PAGES } = require("../config/membership");
+const { MEMBERSHIP_TYPES, PAYMENT_PAGES, isMembershipType } = require("../config/membership");
 const { memberUpload, pickFiles, checkFileContents, toStoredFile, removeUploaded, removeStoredFiles } = require("../documents/upload");
 const { verifyApplication, confirmPagePayment } = require("../payments/zohoPage");
 const digilocker = require("../digilocker/service");
@@ -43,6 +43,16 @@ const otpLimiter = rateLimit({
   message: { message: "Too many requests. Please try again in 15 minutes." },
 });
 
+// Submitting, paying and DigiLocker / payment checks: generous for a real applicant, but stops
+// one join session from flooding the disk with uploads or Cashfree / Zoho with paid API calls.
+const joinWriteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests. Please try again in 15 minutes." },
+});
+
 const MEMBER_EXISTS = {
   code: "MEMBER_EXISTS",
   message: "This email address already belongs to a member. Please log in to your member account to download your card or renew.",
@@ -62,7 +72,7 @@ async function cancelApplication(application, reason) {
 
 // One email may apply for different plans, but only once per plan. A plan key from the
 // request ("" when none or unknown) narrows everything below to that plan's application.
-const planOf = (v) => (typeof v === "string" && MEMBERSHIP_TYPES[v] ? v : "");
+const planOf = (v) => (isMembershipType(v) ? v : "");
 const planFilter = (type) => (type ? { membershipType: type } : {});
 
 // Already applied (paid, under review) for this plan with this email.
@@ -165,7 +175,7 @@ router.get("/application", requireJoin, async (req, res) => {
 });
 
 // POST /api/join/application  (multipart: data=JSON, photo, signature, idProof)
-router.post("/application", requireJoin, memberUpload, async (req, res) => {
+router.post("/application", joinWriteLimiter, requireJoin, memberUpload, async (req, res) => {
   const files = pickFiles(req.files);
   let input;
   try {
@@ -256,16 +266,22 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
   const previous = await Application.find({ email: data.email, membershipType: data.membershipType, status: { $in: OPEN_STATUSES } });
   for (const old of previous) await cancelApplication(old, "Replaced by a new application.");
 
-  const application = await Application.create({
-    ...data,
-    documents: Object.fromEntries(Object.entries(files).map(([k, f]) => [k, toStoredFile(f)])),
-    termsAcceptedAt: new Date(),
-    status: paidOrder || oldReference ? "PENDING" : "UNPAID",
-    paymentOrderId: paidOrder ? paidOrder._id : null,
-    paidOnPage: !!oldReference,
-    paymentReference: oldReference ? oldReference.paymentReference : "",
-    paymentReportedAt: oldReference ? oldReference.paymentReportedAt : null,
-  });
+  let application;
+  try {
+    application = await Application.create({
+      ...data,
+      documents: Object.fromEntries(Object.entries(files).map(([k, f]) => [k, toStoredFile(f)])),
+      termsAcceptedAt: new Date(),
+      status: paidOrder || oldReference ? "PENDING" : "UNPAID",
+      paymentOrderId: paidOrder ? paidOrder._id : null,
+      paidOnPage: !!oldReference,
+      paymentReference: oldReference ? oldReference.paymentReference : "",
+      paymentReportedAt: oldReference ? oldReference.paymentReportedAt : null,
+    });
+  } catch (err) {
+    await removeUploaded(files); // never leave uploads behind when the application isn't saved
+    throw err;
+  }
   if (paidOrder) {
     paidOrder.applicationId = application._id;
     paidOrder.name = application.name;
@@ -310,7 +326,7 @@ router.post("/digilocker/start", otpLimiter, requireJoin, async (req, res) => {
 // POST /api/join/digilocker/complete { verificationId } — the applicant is back from DigiLocker.
 // Always 200: { email, verified: true, prefill, locked, last4, verificationId }
 //          or { email, verified: false, kind, message } (then the form is filled by hand).
-router.post("/digilocker/complete", requireJoin, async (req, res) => {
+router.post("/digilocker/complete", joinWriteLimiter, requireJoin, async (req, res) => {
   const result = await digilocker.complete(req.joinEmail, req.body && req.body.verificationId);
   res.json({ email: req.joinEmail, ...result });
 });
@@ -337,7 +353,7 @@ router.delete("/application", requireJoin, async (req, res) => {
 // POST /api/join/application/paid — "I have completed the payment" on the Zoho payment page.
 // Usually not needed: Zoho's webhook sends the application to the admin by itself. This checks
 // again for a payment Zoho has reported for this email; without one, nothing changes (409).
-router.post("/application/paid", requireJoin, async (req, res) => {
+router.post("/application/paid", joinWriteLimiter, requireJoin, async (req, res) => {
   const plan = planFilter(planOf(req.body && req.body.membershipType));
   const application = await Application.findOne({ email: req.joinEmail, ...plan, status: { $in: ["UNPAID", "PENDING"] } }).sort({ createdAt: -1 });
   if (!application) return res.status(404).json({ message: "Please fill in your details first." });
@@ -360,7 +376,7 @@ router.post("/application/paid", requireJoin, async (req, res) => {
 
 // POST /api/join/application/checkout — pay for the submitted application (UNPAID, or
 // APPROVED under the older flow).
-router.post("/application/checkout", requireJoin, async (req, res) => {
+router.post("/application/checkout", joinWriteLimiter, requireJoin, async (req, res) => {
   const plan = planFilter(planOf(req.body && req.body.membershipType));
   const application = await Application.findOne({ email: req.joinEmail, ...plan, status: { $in: ["UNPAID", "APPROVED"] } }).sort({ createdAt: -1 });
   if (!application) {

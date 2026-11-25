@@ -7,6 +7,9 @@ const adminSchema = new mongoose.Schema(
     // Only a SHA-256 hash of the session token is stored. One session at a time.
     sessionTokenHash: { type: String, default: null },
     sessionExpiresAt: { type: Date, default: null },
+    // Brute-force protection per account (the IP rate limit alone can be dodged with many IPs).
+    failedLogins: { type: Number, default: 0 },
+    lockedUntil: { type: Date, default: null },
   },
   { timestamps: true }
 );

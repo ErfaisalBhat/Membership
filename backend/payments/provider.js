@@ -37,8 +37,9 @@ function paymentsProblem() {
   return provider.problem();
 }
 
+// name comes from the webhook URL: own keys only, so /webhook/constructor finds nothing.
 function providerByName(name) {
-  return providers[name] || null;
+  return Object.hasOwn(providers, name) ? providers[name] : null;
 }
 
 module.exports = { activeProvider, providerByName, paymentsProblem };

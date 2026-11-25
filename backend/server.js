@@ -42,6 +42,13 @@ app.use(
 );
 app.use(cors({ origin: FRONTEND_URL }));
 
+// API answers carry personal data (Aadhaar details, addresses, documents): never let a browser
+// or proxy cache them. A route may still set its own Cache-Control (e.g. the public card photo).
+app.use("/api", (req, res, next) => {
+  res.setHeader("Cache-Control", "no-store");
+  next();
+});
+
 // Webhooks need the raw body for signature checks, so they come before express.json.
 app.use("/api/payments/webhook", webhookRoutes);
 

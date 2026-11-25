@@ -22,7 +22,7 @@ const {
   filePath,
   removeStoredFiles,
   removeUploaded,
-  DOCUMENT_FIELDS,
+  isDocumentField,
 } = require("../documents/upload");
 
 const router = express.Router();
@@ -304,7 +304,7 @@ router.post("/:id/send-card", async (req, res) => {
 
 // GET /api/members/:id/files/:kind  (photo | signature | idProof)
 router.get("/:id/files/:kind", async (req, res) => {
-  if (!DOCUMENT_FIELDS[req.params.kind]) return res.status(404).json({ message: "Unknown document." });
+  if (!isDocumentField(req.params.kind)) return res.status(404).json({ message: "Unknown document." });
   const member = await loadMember(req, res);
   if (!member) return;
   const doc = member.documents && member.documents[req.params.kind];
