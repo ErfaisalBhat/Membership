@@ -39,11 +39,15 @@ async function recordWebhookPayment(payment, { liveMode = true } = {}) {
   );
   if (doc.status !== "succeeded" || doc.applicationId) return doc;
 
+  // One email can have applications for different plans: prefer the one whose fee was paid.
+  const byEmail = doc.email
+    ? await Application.find({ email: doc.email, status: { $in: ["UNPAID", "PENDING"] }, paymentReference: "", paymentOrderId: null }).sort({ createdAt: -1 })
+    : [];
   const application =
     (await Application.findOne({ status: "PENDING", paymentReference: referenceRegex(doc.paymentId) })) ||
-    (doc.email
-      ? await Application.findOne({ email: doc.email, status: { $in: ["UNPAID", "PENDING"] }, paymentReference: "", paymentOrderId: null }).sort({ createdAt: -1 })
-      : null);
+    byEmail.find((a) => feeMatches(a, doc.amount)) ||
+    byEmail[0] ||
+    null;
   if (application) await attachPayment(application, doc);
   else console.warn(`[ZOHO PAGE] Payment ${doc.paymentId}${doc.email ? ` from ${doc.email}` : " (no email)"} matches no application yet.`);
   return doc;
@@ -63,9 +67,16 @@ async function attachPayment(application, payment) {
   }
 }
 
-// A payment Zoho reported for this applicant's email that is not linked to anything yet.
-function unlinkedPaymentFor(application) {
-  return ZohoPayment.findOne({ email: application.email, status: "succeeded", applicationId: null }).sort({ paidAt: -1 });
+function feeMatches(application, amount) {
+  const type = MEMBERSHIP_TYPES[application.membershipType];
+  return !!type && Math.abs(Number(amount) - type.fee) <= 0.001;
+}
+
+// A payment Zoho reported for this applicant's email that is not linked to anything yet
+// (the one for this plan's fee first, as the email may have applied for several plans).
+async function unlinkedPaymentFor(application) {
+  const payments = await ZohoPayment.find({ email: application.email, status: "succeeded", applicationId: null }).sort({ paidAt: -1 });
+  return payments.find((p) => feeMatches(application, p.amount)) || payments[0] || null;
 }
 
 // Checks the application's payment against what Zoho reported. Saves; returns { verified, note }.

@@ -60,11 +60,26 @@ async function cancelApplication(application, reason) {
   await removeStoredFiles(filesOf(application));
 }
 
+// One email may apply for different plans, but only once per plan. A plan key from the
+// request ("" when none or unknown) narrows everything below to that plan's application.
+const planOf = (v) => (typeof v === "string" && MEMBERSHIP_TYPES[v] ? v : "");
+const planFilter = (type) => (type ? { membershipType: type } : {});
+
+// Already applied (paid, under review) for this plan with this email.
+function alreadyApplied(type) {
+  const label = MEMBERSHIP_TYPES[type] ? MEMBERSHIP_TYPES[type].label : "this plan";
+  return {
+    code: "ALREADY_APPLIED",
+    message: `You have already applied for ${label} with this email address. Your application is being reviewed by the Membership Section and we will email you once it has been reviewed. You can still apply for a different plan.`,
+  };
+}
+
 // The application to show the applicant: the open one, else the last paid or rejected one.
-async function latestApplication(email) {
+async function latestApplication(email, type = "") {
+  const plan = planFilter(type);
   return (
-    (await Application.findOne({ email, status: { $in: OPEN_STATUSES } }).sort({ createdAt: -1 })) ||
-    (await Application.findOne({ email, status: { $in: ["PAID", "REJECTED"] } }).sort({ updatedAt: -1 }))
+    (await Application.findOne({ email, ...plan, status: { $in: OPEN_STATUSES } }).sort({ createdAt: -1 })) ||
+    (await Application.findOne({ email, ...plan, status: { $in: ["PAID", "REJECTED"] } }).sort({ updatedAt: -1 }))
   );
 }
 
@@ -106,6 +121,11 @@ router.post("/otp", otpLimiter, async (req, res) => {
   const email = normalizeEmail(req.body && req.body.email);
   if (!isValidEmail(email)) return res.status(400).json({ message: "Enter a valid email address.", errors: { email: "Enter a valid email address." } });
   if (await Member.exists({ email })) return res.status(409).json(MEMBER_EXISTS);
+  // Already submitted and paid for this plan: no code needed, just say so.
+  const type = planOf(req.body && req.body.membershipType);
+  if (type && (await Application.exists({ email, membershipType: type, status: "PENDING" }))) {
+    return res.status(409).json(alreadyApplied(type));
+  }
 
   const code = await createCode(email, "JOIN");
   const result = await trySend(() => sendCodeEmail(email, code, "JOIN", CODE_MINUTES));
@@ -121,7 +141,7 @@ router.post("/verify", otpLimiter, async (req, res) => {
   if (await Member.exists({ email })) return res.status(409).json(MEMBER_EXISTS);
 
   const joinToken = await createSession("JOIN", email, JOIN_SESSION_HOURS);
-  const latest = await latestApplication(email);
+  const latest = await latestApplication(email, planOf(req.body && req.body.membershipType));
   res.json({
     joinToken,
     email,
@@ -136,7 +156,7 @@ router.post("/verify", otpLimiter, async (req, res) => {
 // plus the applicant's DigiLocker verification (if any) to fill the form again.
 router.get("/application", requireJoin, async (req, res) => {
   res.json({
-    ...(await applicationResponse(await latestApplication(req.joinEmail))),
+    ...(await applicationResponse(await latestApplication(req.joinEmail, planOf(req.query.type)))),
     email: req.joinEmail,
     digilocker: await digilocker.latestVerified(req.joinEmail),
     pan: await panCheck.latestVerified(req.joinEmail),
@@ -225,9 +245,15 @@ router.post("/application", requireJoin, memberUpload, async (req, res) => {
     await removeUploaded(files);
     return res.status(409).json(MEMBER_EXISTS);
   }
+  // Only once per plan: an application already paid / under review for this plan can't be repeated.
+  if (await Application.exists({ email: data.email, membershipType: data.membershipType, status: { $in: ["PENDING", "APPROVED"] } })) {
+    await removeUploaded(files);
+    return res.status(409).json(alreadyApplied(data.membershipType));
+  }
 
-  // One open application per email: a new submission replaces the old one (and goes back to review).
-  const previous = await Application.find({ email: data.email, status: { $in: OPEN_STATUSES } });
+  // One open application per email and plan: a new submission replaces the unpaid one for the
+  // same plan. Applications for other plans are left alone.
+  const previous = await Application.find({ email: data.email, membershipType: data.membershipType, status: { $in: OPEN_STATUSES } });
   for (const old of previous) await cancelApplication(old, "Replaced by a new application.");
 
   const application = await Application.create({
@@ -303,7 +329,7 @@ router.post("/pan/verify", otpLimiter, requireJoin, async (req, res) => {
 
 // DELETE /api/join/application — withdraw the open application.
 router.delete("/application", requireJoin, async (req, res) => {
-  const open = await Application.find({ email: req.joinEmail, status: { $in: OPEN_STATUSES } });
+  const open = await Application.find({ email: req.joinEmail, ...planFilter(planOf(req.query.type)), status: { $in: OPEN_STATUSES } });
   for (const a of open) await cancelApplication(a, "Withdrawn by the applicant.");
   res.json({ cancelled: open.length });
 });
@@ -312,7 +338,8 @@ router.delete("/application", requireJoin, async (req, res) => {
 // Usually not needed: Zoho's webhook sends the application to the admin by itself. This checks
 // again for a payment Zoho has reported for this email; without one, nothing changes (409).
 router.post("/application/paid", requireJoin, async (req, res) => {
-  const application = await Application.findOne({ email: req.joinEmail, status: { $in: ["UNPAID", "PENDING"] } }).sort({ createdAt: -1 });
+  const plan = planFilter(planOf(req.body && req.body.membershipType));
+  const application = await Application.findOne({ email: req.joinEmail, ...plan, status: { $in: ["UNPAID", "PENDING"] } }).sort({ createdAt: -1 });
   if (!application) return res.status(404).json({ message: "Please fill in your details first." });
   if (application.status === "PENDING") return res.json(await applicationResponse(application)); // the webhook was first
   if (!PAYMENT_PAGES[application.membershipType]) {
@@ -334,9 +361,10 @@ router.post("/application/paid", requireJoin, async (req, res) => {
 // POST /api/join/application/checkout — pay for the submitted application (UNPAID, or
 // APPROVED under the older flow).
 router.post("/application/checkout", requireJoin, async (req, res) => {
-  const application = await Application.findOne({ email: req.joinEmail, status: { $in: ["UNPAID", "APPROVED"] } }).sort({ createdAt: -1 });
+  const plan = planFilter(planOf(req.body && req.body.membershipType));
+  const application = await Application.findOne({ email: req.joinEmail, ...plan, status: { $in: ["UNPAID", "APPROVED"] } }).sort({ createdAt: -1 });
   if (!application) {
-    const pending = await Application.exists({ email: req.joinEmail, status: "PENDING" });
+    const pending = await Application.exists({ email: req.joinEmail, ...plan, status: "PENDING" });
     return res.status(pending ? 409 : 404).json(
       pending
         ? { code: "ALREADY_PAID", message: "Your payment has been received and your application is being reviewed. You do not need to pay again." }

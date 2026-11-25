@@ -66,6 +66,9 @@ export default function JoinPage() {
   const [plan, setPlan] = useState(params.get("type") || "");
   const [email, setEmail] = useState("");
   const [existing, setExisting] = useState(false); // email already belongs to a member
+  const [alreadyApplied, setAlreadyApplied] = useState(""); // message: this email already applied for this plan
+  // ?type=<plan> for the join endpoints: one email can have an application per plan.
+  const planQuery = (type) => (type ? `?type=${encodeURIComponent(type)}` : "");
   const [application, setApplication] = useState(null);
   const [member, setMember] = useState(null);
   const [form, setForm] = useState(emptyPerson);
@@ -250,7 +253,7 @@ export default function JoinPage() {
       // email): verify the email first.
       return setStep(params.get("dl") || params.get("continue") ? "email" : "plan");
     }
-    api("/join/application", { auth: "join" })
+    api(`/join/application${planQuery(params.get("type") || readDraft()?.plan || "")}`, { auth: "join" })
       .then((res) => {
         setPaidOrder(res.paidOrder || null);
         if (res.pan) setSavedPan(res.pan);
@@ -324,7 +327,7 @@ export default function JoinPage() {
     } catch (err) {
       if (err.code === "DIGILOCKER_DONE") {
         // Verified in another tab or earlier: fetch it and fill the form.
-        const res = await api("/join/application", { auth: "join" }).catch(() => null);
+        const res = await api(`/join/application${planQuery(plan)}`, { auth: "join" }).catch(() => null);
         if (res?.digilocker) applyDigilocker(res.digilocker, plan);
         setBusy(false);
         return;
@@ -339,17 +342,23 @@ export default function JoinPage() {
   // ---------- email ----------
   const requestCode = (value) => {
     setExisting(false);
-    return api("/join/otp", { method: "POST", json: { email: value }, auth: false });
+    setAlreadyApplied("");
+    return api("/join/otp", { method: "POST", json: { email: value, membershipType: plan }, auth: false });
   };
   const onRequestError = (err) => {
     if (err.code === "MEMBER_EXISTS") {
       setExisting(true);
       return true;
     }
+    if (err.code === "ALREADY_APPLIED") {
+      // Already applied for this plan with this email: no code is sent.
+      setAlreadyApplied(err.message);
+      return true;
+    }
     return false;
   };
   async function verifyCode(value, code) {
-    const res = await api("/join/verify", { method: "POST", json: { email: value, code }, auth: false });
+    const res = await api("/join/verify", { method: "POST", json: { email: value, code, membershipType: plan }, auth: false });
     joinTokenStore.set(res.joinToken);
     setEmail(res.email);
     setBanner("");
@@ -398,6 +407,17 @@ export default function JoinPage() {
       setForm((f) => ({ ...f, membershipType: type }));
     }
     setStep("details");
+  }
+
+  // Email already verified, plan chosen: show this plan's application if there is one
+  // (waiting for payment or under review), otherwise open the form for it.
+  async function continueWithPlan(type) {
+    const res = await api(`/join/application${planQuery(type)}`, { auth: "join" }).catch(() => null);
+    const a = res?.application;
+    if (a && a.membershipType === type && ["UNPAID", "PENDING", "APPROVED"].includes(a.status)) {
+      setApplication(a);
+      setStep(stepFor(a));
+    } else startDetails(type);
   }
 
   // After a rejection or withdrawal: fill the form again (no new payment if one is unused).
@@ -465,7 +485,7 @@ export default function JoinPage() {
   async function startOver() {
     setBusy(true);
     try {
-      await api("/join/application", { method: "DELETE", auth: "join" });
+      await api(`/join/application${planQuery(application?.membershipType || plan)}`, { method: "DELETE", auth: "join" });
       newApplication();
     } catch (err) {
       setBanner(err.message);
@@ -481,11 +501,12 @@ export default function JoinPage() {
     setPayMessage(null);
     setBusy(true);
     try {
-      const res = await api("/join/application/checkout", { method: "POST", auth: "join" });
+      const type = application?.membershipType || plan;
+      const res = await api("/join/application/checkout", { method: "POST", json: { membershipType: type }, auth: "join" });
       setCheckout(res.checkout);
     } catch (err) {
       if (err.code === "ALREADY_PAID") {
-        const res = await api("/join/application", { auth: "join" }).catch(() => null);
+        const res = await api(`/join/application${planQuery(application?.membershipType || plan)}`, { auth: "join" }).catch(() => null);
         if (res?.application) {
           setApplication(res.application);
           setStep(stepFor(res.application));
@@ -546,7 +567,7 @@ export default function JoinPage() {
   useEffect(() => {
     if (!waitingForZoho) return;
     const timer = setInterval(async () => {
-      const res = await api("/join/application", { auth: "join" }).catch(() => null);
+      const res = await api(`/join/application${planQuery(application?.membershipType)}`, { auth: "join" }).catch(() => null);
       if (res?.application && res.application.status !== "UNPAID") {
         setApplication(res.application);
         setStep(stepFor(res.application));
@@ -561,7 +582,7 @@ export default function JoinPage() {
     setBusy(true);
     setBanner("");
     try {
-      const res = await api("/join/application/paid", { method: "POST", auth: "join" });
+      const res = await api("/join/application/paid", { method: "POST", json: { membershipType: application?.membershipType || plan }, auth: "join" });
       setApplication(res.application);
       setStep("review");
     } catch (err) {
@@ -622,7 +643,7 @@ export default function JoinPage() {
               type="button"
               className={buttonClass.primary}
               disabled={!chosen}
-              onClick={() => (email && joinTokenStore.get() ? startDetails(plan) : setStep("email"))}
+              onClick={() => (email && joinTokenStore.get() ? continueWithPlan(plan) : setStep("email"))}
             >
               Continue <Icon name="arrowRight" className="h-4 w-4" />
             </button>
@@ -653,6 +674,18 @@ export default function JoinPage() {
                   Go to member login
                 </Link>
                 <button type="button" className={`${buttonClass.ghost} w-full justify-center`} onClick={() => setExisting(false)}>
+                  Use a different email
+                </button>
+              </div>
+            ) : alreadyApplied ? (
+              <div className="space-y-4">
+                <Alert kind="info" title="Already applied">
+                  {alreadyApplied}
+                </Alert>
+                <button type="button" className={`${buttonClass.primary} w-full justify-center`} onClick={() => { setAlreadyApplied(""); setStep("plan"); }}>
+                  Apply for a different plan
+                </button>
+                <button type="button" className={`${buttonClass.ghost} w-full justify-center`} onClick={() => setAlreadyApplied("")}>
                   Use a different email
                 </button>
               </div>
