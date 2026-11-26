@@ -23,7 +23,30 @@ function Logo({ src, alt, className, fallback = null }) {
   return <img src={src} alt={alt} className={className} onError={() => setFailed(true)} />;
 }
 
+// Full banner (logos + name + registration details), same as finance.asssr.org.
+const HEADER_BANNER = "/logos/header.webp";
+
 export default function OrgHeader() {
+  const [bannerFailed, setBannerFailed] = useState(false);
+
+  if (!bannerFailed) {
+    return (
+      <div className="border-b border-slate-200 bg-white">
+        <Link to="/" aria-label="Home" className="mx-auto flex max-w-5xl justify-center px-2 py-1 sm:px-4">
+          <img
+            src={HEADER_BANNER}
+            alt="Asiatic Society for Social Science Research — Estd. under the Societies Registration Act XXI of 1860, NITI Aayog ID: DL/2021/0287154"
+            className="h-auto max-h-16 w-auto max-w-full sm:max-h-20 lg:max-h-24"
+            width="1600"
+            height="263"
+            onError={() => setBannerFailed(true)}
+          />
+        </Link>
+      </div>
+    );
+  }
+
+  // Fallback layout if the banner image is missing.
   return (
     <>
       {/* Registration strip */}
