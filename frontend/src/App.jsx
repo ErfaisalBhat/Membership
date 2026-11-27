@@ -38,6 +38,8 @@ export default function App() {
         <Route path="/members" element={<PublicMembersPage />} />
         <Route path="/join" element={<JoinPage />} />
         <Route path="/account" element={<AccountPage />} />
+        {/* "Renew Member" in the menu: renewal is done from the member account. */}
+        <Route path="/renew" element={<AccountPage />} />
         <Route path="/verify/:token" element={<VerifyPage />} />
         <Route path="*" element={<NotFound />} />
       </Route>

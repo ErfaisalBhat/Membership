@@ -246,12 +246,13 @@ export default function JoinPage() {
     const inSiteLink = location.key !== "default"; // "default" = the page was (re)loaded
     if (inSiteLink && !params.get("dl")) {
       joinTokenStore.clear();
-      return setStep(params.get("continue") ? "email" : "plan");
+      // A category chosen in the home page table (?type=) skips the plan step.
+      return setStep(params.get("continue") || params.get("type") ? "email" : "plan");
     }
     if (!joinTokenStore.get()) {
-      // ?dl= without a session (DigiLocker opened in another tab), or ?continue=1 (link in an
-      // email): verify the email first.
-      return setStep(params.get("dl") || params.get("continue") ? "email" : "plan");
+      // ?dl= without a session (DigiLocker opened in another tab), ?continue=1 (link in an
+      // email) or a category already chosen (?type=): verify the email first.
+      return setStep(params.get("dl") || params.get("continue") || params.get("type") ? "email" : "plan");
     }
     api(`/join/application${planQuery(params.get("type") || readDraft()?.plan || "")}`, { auth: "join" })
       .then((res) => {
@@ -307,6 +308,11 @@ export default function JoinPage() {
   useEffect(() => {
     if (step !== "loading") scrollTop();
   }, [step]);
+
+  // An unknown ?type= in the address: forget it, so the plan is chosen on the plan step.
+  useEffect(() => {
+    if (config && plan && !typeInfo(config, plan)) setPlan("");
+  }, [config, plan]);
 
   function choosePlan(key) {
     setPlan(key);
@@ -849,12 +855,21 @@ export default function JoinPage() {
               </span>
             </label>
             <div className="rounded-md bg-slate-50 p-4">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Terms</p>
-              <ul className="mt-2 list-disc space-y-1.5 pl-5 text-sm text-slate-600">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Terms and Conditions of Membership</p>
+              <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-slate-600">
                 {config.content.terms.map((t) => (
-                  <li key={t}>{t}</li>
+                  <li key={t.title}>
+                    <span className="font-semibold text-slate-700">{t.title}.</span> {t.text}
+                    {t.items && (
+                      <span className="block pl-1">
+                        {t.items.map((item, j) => (
+                          <span key={item} className="block">({String.fromCharCode(97 + j)}) {item}</span>
+                        ))}
+                      </span>
+                    )}
+                  </li>
                 ))}
-              </ul>
+              </ol>
             </div>
             <label className="flex items-start gap-3">
               <input
