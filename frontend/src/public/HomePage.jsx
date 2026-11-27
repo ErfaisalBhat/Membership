@@ -54,15 +54,6 @@ export default function HomePage() {
           <div>
             <h1 className="text-3xl font-semibold tracking-tight text-slate-900 sm:text-4xl">Membership of the Society</h1>
             <p className="mt-4 max-w-2xl text-base leading-relaxed text-slate-600">{content.about}</p>
-            <div className="mt-6 flex flex-wrap gap-3">
-              {/* Scrolls to the categories table, where the category is chosen. */}
-              <a href="#categories" className="rounded-md bg-brand-700 px-5 py-2.5 text-sm font-medium text-white shadow-xs hover:bg-brand-800">
-                Apply now
-              </a>
-              <Link to="/renew" className="rounded-md border border-slate-300 bg-white px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                Renew membership
-              </Link>
-            </div>
           </div>
           <div className="rounded-lg border border-slate-200 bg-slate-50 p-5">
             <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500">Rights and Facilities of Members</h2>
