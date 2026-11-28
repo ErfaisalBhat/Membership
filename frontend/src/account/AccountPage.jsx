@@ -1,15 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { ApiError, api, apiBlob, openInNewTab } from "../api/client";
-import { useConfig } from "../api/useConfig";
+import { api, apiBlob, openInNewTab } from "../api/client";
 import { formatDate, formatMoney } from "../shared/format";
-import { setIn } from "../shared/formState";
-import INDIAN_STATES from "../shared/indianStates";
 import Checkout from "../payments/Checkout";
 import CodeForm from "../ui/CodeForm";
 import StatusBadge from "../ui/StatusBadge";
 import Icon from "../ui/icons";
-import { Alert, Card, Details, Field, Spinner, buttonClass, inputClass } from "../ui/form";
+import { Alert, Card, Details, Spinner, buttonClass } from "../ui/form";
 import { useMemberAuth } from "./MemberAuthContext";
 
 function LoginView() {
@@ -21,7 +18,7 @@ function LoginView() {
           <Icon name="id" />
         </div>
         <h1 className="mt-4 text-2xl font-semibold tracking-tight text-slate-900">Member login</h1>
-        <p className="mt-1 text-sm text-slate-500">Download your ID card and receipts, update your details and renew online.</p>
+        <p className="mt-1 text-sm text-slate-500">Download your ID card and receipts, and renew your membership online.</p>
       </div>
       <Card>
         <CodeForm
@@ -42,11 +39,21 @@ function LoginView() {
   );
 }
 
-function RenewCard({ account, onUpdated }) {
+// renewRequest: goes up by one each time "Renew" in the header is clicked; the card then
+// scrolls into view and opens the payment when renewal is open.
+function RenewCard({ account, onUpdated, renewRequest = 0 }) {
   const { member, renewal, onlinePayments } = account;
   const [checkout, setCheckout] = useState(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
+  const cardRef = useRef(null);
+
+  useEffect(() => {
+    if (!renewRequest) return;
+    cardRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (renewal.canRenew && onlinePayments && !checkout && !busy) start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [renewRequest]);
 
   async function start() {
     setMessage(null);
@@ -90,6 +97,7 @@ function RenewCard({ account, onUpdated }) {
   if (member.expiryDate === null) return null;
 
   return (
+    <div ref={cardRef} className="scroll-mt-6">
     <Card title="Renewal">
       <div className="space-y-4">
         {message && <Alert kind={message.kind}>{message.text}</Alert>}
@@ -120,111 +128,16 @@ function RenewCard({ account, onUpdated }) {
         )}
       </div>
     </Card>
-  );
-}
-
-function EditDetails({ member, onSaved, onCancel }) {
-  const [form, setForm] = useState({
-    whatsapp: member.whatsapp || "",
-    address: { line1: "", line2: "", city: "", state: "", pincode: "", ...member.address },
-    affiliated: member.affiliated ? "Yes" : "No",
-    affiliation: { institution: "", department: "", designation: "", state: "", ...member.affiliation },
-    showInPublicList: !!member.showInPublicList,
-  });
-  const [errors, setErrors] = useState({});
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-  const affiliated = form.affiliated === "Yes";
-
-  const set = (path, value) => {
-    setForm((f) => setIn(f, path, value));
-    setErrors((e) => ({ ...e, [path]: undefined }));
-  };
-  const input = (path, label, opts = {}) => {
-    const value = path.split(".").reduce((o, k) => o?.[k], form) ?? "";
-    return (
-      <Field label={label} htmlFor={`me-${path}`} error={errors[path]} required={opts.required !== false} className={opts.className}>
-        <input id={`me-${path}`} className={inputClass(errors[path])} value={value} maxLength={opts.maxLength} inputMode={opts.inputMode} onChange={(e) => set(path, e.target.value)} />
-      </Field>
-    );
-  };
-  const stateSelect = (path) => (
-    <Field label="State" htmlFor={`me-${path}`} error={errors[path]} required>
-      <select id={`me-${path}`} className={inputClass(errors[path])} value={path.split(".").reduce((o, k) => o?.[k], form) || ""} onChange={(e) => set(path, e.target.value)}>
-        <option value="">Select…</option>
-        {INDIAN_STATES.map((s) => (
-          <option key={s}>{s}</option>
-        ))}
-      </select>
-    </Field>
-  );
-
-  async function save(e) {
-    e.preventDefault();
-    setError("");
-    setBusy(true);
-    try {
-      const res = await api("/account/me", { method: "PUT", json: { ...form, affiliated: affiliated ? "Yes" : "No" }, auth: "member" });
-      onSaved(res);
-    } catch (err) {
-      if (err instanceof ApiError) setErrors(err.errors);
-      setError(err.message);
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form onSubmit={save} noValidate className="space-y-5">
-      {error && <Alert>{error}</Alert>}
-      <div className="grid gap-4 sm:grid-cols-2">
-        {input("whatsapp", "Number", { inputMode: "numeric" })}
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        {input("address.line1", "Address line 1", { maxLength: 30, className: "sm:col-span-2" })}
-        {input("address.line2", "Address line 2", { maxLength: 30, required: false, className: "sm:col-span-2" })}
-        {input("address.city", "City")}
-        {stateSelect("address.state")}
-        {input("address.pincode", "PIN code", { maxLength: 6, inputMode: "numeric" })}
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Affiliated to an institute?" htmlFor="me-affiliated">
-          <select id="me-affiliated" className={inputClass()} value={affiliated ? "Yes" : "No"} onChange={(e) => set("affiliated", e.target.value)}>
-            <option>No</option>
-            <option>Yes</option>
-          </select>
-        </Field>
-        {affiliated && (
-          <>
-            {input("affiliation.designation", "Designation")}
-            {input("affiliation.department", "Department")}
-            {input("affiliation.institution", "University / Institution / Organization", { className: "sm:col-span-2" })}
-            {stateSelect("affiliation.state")}
-          </>
-        )}
-      </div>
-      <label className="flex items-start gap-3">
-        <input type="checkbox" className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-700" checked={form.showInPublicList} onChange={(e) => set("showInPublicList", e.target.checked)} />
-        <span className="text-sm text-slate-700">List me in the public members directory.</span>
-      </label>
-      <div className="flex gap-2">
-        <button type="submit" className={buttonClass.primary} disabled={busy}>
-          {busy ? "Saving…" : "Save changes"}
-        </button>
-        <button type="button" className={buttonClass.secondary} onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-    </form>
+    </div>
   );
 }
 
 function Dashboard() {
   const { account, setAccount, logout } = useMemberAuth();
-  const { config } = useConfig();
   const [photoUrl, setPhotoUrl] = useState(null);
-  const [editing, setEditing] = useState(false);
   const [flash, setFlash] = useState("");
   const [error, setError] = useState("");
+  const [renewRequest, setRenewRequest] = useState(0);
   const member = account.member;
 
   useEffect(() => {
@@ -299,9 +212,21 @@ function Dashboard() {
             </dl>
             {member.status === "INACTIVE" && member.statusReason && <p className="mt-3 text-sm text-slate-600">Reason: {member.statusReason}</p>}
           </div>
-          <button type="button" className={buttonClass.primary} onClick={() => open("/account/card.pdf")}>
-            <Icon name="download" className="h-4 w-4" /> ID card (PDF)
-          </button>
+          <div className="flex shrink-0 flex-col gap-2">
+            <button type="button" className={buttonClass.primary} onClick={() => open("/account/card.pdf")}>
+              <Icon name="download" className="h-4 w-4" /> ID card (PDF)
+            </button>
+            {/* Memberships that expire: opens the Renewal box (and the payment, once renewal is open). */}
+            {member.expiryDate && (
+              <button
+                type="button"
+                className={account.renewal.canRenew ? buttonClass.primary : buttonClass.secondary}
+                onClick={() => setRenewRequest((n) => n + 1)}
+              >
+                <Icon name="refresh" className="h-4 w-4" /> Renew membership
+              </button>
+            )}
+          </div>
         </div>
       </Card>
 
@@ -347,51 +272,23 @@ function Dashboard() {
             </div>
           </Card>
 
-          <Card
-            title="My details"
-            action={
-              !editing && (
-                <button type="button" className={buttonClass.ghost} onClick={() => setEditing(true)}>
-                  Edit contact details
-                </button>
-              )
-            }
-          >
-            {editing ? (
-              <EditDetails
-                member={member}
-                onCancel={() => setEditing(false)}
-                onSaved={(res) => {
-                  setAccount(res);
-                  setEditing(false);
-                  setFlash("Your details have been updated.");
-                }}
-              />
-            ) : (
-              <div className="space-y-5">
-                <Details
-                  rows={[
-                    ["Email", member.email],
-                    ["Number", member.whatsapp],
-                    ...(isInstitution
-                      ? [["Authorized contact person", member.contactPerson], ...(member.pan?.number ? [["PAN", member.pan.number]] : [])]
-                      : [["Date of birth", formatDate(member.dob)]]),
-                    ["Address", [a.line1, a.line2, a.city, a.state && `${a.state} – ${a.pincode}`].filter(Boolean).join(", ")],
-                    ["Affiliation", member.affiliated ? [af.designation, af.department, af.institution].filter(Boolean).join(", ") : "Not affiliated"],
-                    ["Members directory", member.showInPublicList ? "Listed" : "Not listed"],
-                  ]}
-                />
-                <p className="border-t border-slate-100 pt-4 text-xs text-slate-500">
-                  To change your name, email, date of birth, photo or documents, please contact the membership office
-                  {config?.contact?.email ? ` at ${config.contact.email}` : ""}.
-                </p>
-              </div>
-            )}
+          <Card title="My details">
+            <Details
+              rows={[
+                ["Email", member.email],
+                ["Number", member.whatsapp],
+                ...(isInstitution
+                  ? [["Authorized contact person", member.contactPerson], ...(member.pan?.number ? [["PAN", member.pan.number]] : [])]
+                  : [["Date of birth", formatDate(member.dob)]]),
+                ["Address", [a.line1, a.line2, a.city, a.state && `${a.state} – ${a.pincode}`].filter(Boolean).join(", ")],
+                ["Affiliation", member.affiliated ? [af.designation, af.department, af.institution].filter(Boolean).join(", ") : "Not affiliated"],
+              ]}
+            />
           </Card>
         </div>
 
         <div className="space-y-6">
-          <RenewCard account={account} onUpdated={setAccount} />
+          <RenewCard account={account} onUpdated={setAccount} renewRequest={renewRequest} />
         </div>
       </div>
     </div>

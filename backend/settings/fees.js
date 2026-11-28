@@ -11,8 +11,11 @@ const { MEMBERSHIP_TYPES } = require("../config/membership");
 const KEY = "fees";
 const MAX_FEE = 1000000;
 
+// Honorary / Emeritus have no fee, so they are not on the Fees page.
+const paidTypes = () => Object.entries(MEMBERSHIP_TYPES).filter(([, t]) => !t.adminOnly);
+
 function apply(saved) {
-  for (const [type, t] of Object.entries(MEMBERSHIP_TYPES)) {
+  for (const [type, t] of paidTypes()) {
     const v = saved && saved[type];
     if (!v) continue;
     if (Number.isInteger(v.fee)) t.fee = v.fee;
@@ -27,7 +30,7 @@ async function loadFees() {
 }
 
 function currentFees() {
-  return Object.entries(MEMBERSHIP_TYPES).map(([key, t]) => ({ key, label: t.label, fee: t.fee, regularFee: t.regularFee }));
+  return paidTypes().map(([key, t]) => ({ key, label: t.label, fee: t.fee, regularFee: t.regularFee }));
 }
 
 const toAmount = (v) => (v === "" || v == null ? NaN : Number(v));
@@ -36,7 +39,7 @@ const toAmount = (v) => (v === "" || v == null ? NaN : Number(v));
 async function saveFees(input, adminEmail = "") {
   const errors = {};
   const value = {};
-  for (const [type, t] of Object.entries(MEMBERSHIP_TYPES)) {
+  for (const [type, t] of paidTypes()) {
     const v = (input && input[type]) || {};
     const fee = toAmount(v.fee);
     // Empty "before waiver" price = no waiver.

@@ -41,7 +41,7 @@ async function createMemberFromApplication(application, payment) {
 
   const member = new Member({
     ...fields,
-    membershipId: await nextMembershipId(joinDate),
+    membershipId: await nextMembershipId(application.membershipType),
     status: "ACTIVE",
     source: "ONLINE",
     joinDate,

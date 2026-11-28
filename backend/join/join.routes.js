@@ -366,9 +366,7 @@ router.post("/application/paid", joinWriteLimiter, requireJoin, async (req, res)
   if (!result.verified) {
     return res.status(409).json({
       code: "PAYMENT_NOT_RECEIVED",
-      message:
-        "We have not received your payment from Zoho yet. If you have just paid, please wait a minute and try again. " +
-        "If you used a different email address on the Zoho page, please contact the membership office.",
+      message: "We have not received your payment yet. If you have just paid, please wait a minute and try again.",
     });
   }
   res.json(await applicationResponse(application));

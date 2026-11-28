@@ -1,6 +1,13 @@
 import INDIAN_STATES from "../shared/indianStates";
 import { getIn } from "../shared/formState";
-import { formatBytes } from "../shared/format";
+import { formatBytes, todayISO } from "../shared/format";
+
+// Latest date of birth the calendar offers: 18 years ago today (no future dates, no minors).
+function adultBornBy() {
+  const [y, m, d] = todayISO().split("-");
+  const day = m === "02" && d === "29" ? "28" : d; // 29 Feb has no match 18 years earlier
+  return `${Number(y) - 18}-${m}-${day}`;
+}
 import { Field, Section, buttonClass, inputClass } from "../ui/form";
 
 // The applicant's details, in the order of the membership form:
@@ -44,7 +51,7 @@ export default function PersonFields({
   const affiliated = form.affiliated === "Yes";
 
   // Called as functions (not components) so inputs keep focus while typing.
-  const text = (path, label, { required = true, type: inputType = "text", hint, lockedAs, maxLength, placeholder, autoComplete, className, inputMode } = {}) => {
+  const text = (path, label, { required = true, type: inputType = "text", hint, lockedAs, maxLength, placeholder, autoComplete, className, inputMode, max } = {}) => {
     const value = getIn(form, path) ?? "";
     const counter = maxLength ? `${String(value).length}/${maxLength} characters` : null;
     return (
@@ -56,6 +63,7 @@ export default function PersonFields({
           disabled={isLocked(path)}
           value={value}
           maxLength={maxLength}
+          max={max}
           placeholder={placeholder}
           autoComplete={autoComplete || "off"}
           inputMode={inputMode}
@@ -177,7 +185,7 @@ export default function PersonFields({
             {text("motherName", "Mother's name")}
             {text("fatherName", "Father's name")}
             {select("gender", "Gender", config.genders)}
-            {text("dob", "Date of birth", { type: "date", hint: "Must be 18 or older." })}
+            {text("dob", "Date of birth", { type: "date", hint: "Must be 18 or older.", max: adultBornBy() })}
           </>
         )}
       </Section>

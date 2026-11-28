@@ -145,13 +145,18 @@ export default function MemberDetailPage() {
 
       <Card>
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-          <div className="h-28 w-22 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100">
-            {photoUrl ? (
+          {photoUrl ? (
+            <button
+              type="button"
+              title="View photograph"
+              className="h-28 w-22 shrink-0 overflow-hidden rounded-md border border-slate-200 bg-slate-100 hover:ring-2 hover:ring-brand-500/40"
+              onClick={() => setViewing({ path: `/members/${id}/files/photo`, title: DOC_LABELS.photo })}
+            >
               <img src={photoUrl} alt={`Photo of ${member.name}`} className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full items-center justify-center text-xs text-slate-400">No photo</div>
-            )}
-          </div>
+            </button>
+          ) : (
+            <div className="flex h-28 w-22 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-slate-100 text-xs text-slate-400">No photo</div>
+          )}
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-2xl font-semibold tracking-tight">{member.name}</h1>
@@ -164,7 +169,7 @@ export default function MemberDetailPage() {
             </p>
             {member.status === "INACTIVE" && member.statusReason && (
               <p className="mt-2 text-sm text-slate-700">
-                <span className="font-medium">Reason inactive:</span> {member.statusReason}
+                <span className="font-medium">Reason debarred:</span> {member.statusReason}
               </p>
             )}
           </div>
@@ -205,8 +210,9 @@ export default function MemberDetailPage() {
           </Card>
 
           <Card title="Documents">
-            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {Object.keys(DOC_LABELS).map((key) => {
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {/* The photograph is shown at the top of the page (click it to enlarge). */}
+              {Object.keys(DOC_LABELS).filter((key) => key !== "photo").map((key) => {
                 const doc = member.documents?.[key];
                 if (!doc) return null;
                 return (
@@ -311,7 +317,7 @@ export default function MemberDetailPage() {
             </Collapsible>
           )}
 
-          <Collapsible key={`status-${member.status}`} title={member.status === "INACTIVE" ? "Reinstate" : "Suspend or cancel"}>
+          <Collapsible key={`status-${member.status}`} title={member.status === "INACTIVE" ? "Reinstate" : "Debar"}>
             <StatusPanel member={member} onDone={updated} />
           </Collapsible>
         </div>

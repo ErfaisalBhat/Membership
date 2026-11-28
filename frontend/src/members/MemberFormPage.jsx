@@ -9,6 +9,7 @@ import PersonFields from "./PersonFields";
 
 const emptyForm = () => ({
   ...emptyPerson(),
+  membershipId: "", // empty on add = the next number automatically
   remarks: "",
   joinDate: todayISO(),
   payment: { amount: "", mode: "", reference: "", date: todayISO() },
@@ -19,6 +20,7 @@ function fromMember(m) {
   return {
     ...f,
     membershipType: m.membershipType,
+    membershipId: m.membershipId || "",
     name: m.name || "",
     contactPerson: m.contactPerson || "",
     pan: m.pan?.number || "",
@@ -91,6 +93,13 @@ export default function MemberFormPage() {
       if (f.payment.amount === "" || Number(f.payment.amount) === oldFee) {
         next = setIn(next, "payment.amount", newFee ?? "");
       }
+      // Honorary / Emeritus are conferred free: nothing is paid.
+      if (typeInfo(config, newType)?.adminOnly) {
+        next = setIn(next, "payment.amount", 0);
+        next = setIn(next, "payment.mode", "Waived");
+      } else if (typeInfo(config, f.membershipType)?.adminOnly && f.payment.mode === "Waived") {
+        next = setIn(next, "payment.mode", "");
+      }
       return next;
     });
     clearError("membershipType");
@@ -156,15 +165,37 @@ export default function MemberFormPage() {
               <option value="">Select…</option>
               {config.membershipTypes.map((t) => (
                 <option key={t.key} value={t.key}>
-                  {t.label} — {formatMoney(t.fee)}
-                  {t.validityMonths ? ` / ${t.validityMonths} months` : " / lifetime"}
+                  {t.label}
+                  {!t.adminOnly && ` — ${formatMoney(t.fee)}${t.validityMonths ? ` / ${t.validityMonths} months` : " / lifetime"}`}
                 </option>
               ))}
             </select>
           </Field>
+          {showRest && (
+            <Field
+              label="Membership ID"
+              htmlFor="membershipId"
+              required={isEdit}
+              error={errors.membershipId}
+              hint={
+                isEdit
+                  ? "Changing it means the member's printed ID card no longer matches. Must not be used by another member."
+                  : `Leave empty to give the next number automatically (${typeInfo(config, type)?.idPrefix || ""}00001 style). Must not be used by another member.`
+              }
+            >
+              <input
+                id="membershipId"
+                className={`${inputClass(errors.membershipId)} uppercase`}
+                maxLength={30}
+                placeholder={isEdit ? "" : "Automatic"}
+                value={form.membershipId}
+                onChange={(e) => set("membershipId", e.target.value.toUpperCase())}
+              />
+            </Field>
+          )}
           {!isEdit && showRest && (
             <Field label="Date of joining" htmlFor="joinDate" required error={errors.joinDate} hint="Validity is counted from this date.">
-              <input id="joinDate" type="date" className={inputClass(errors.joinDate)} value={form.joinDate} onChange={(e) => set("joinDate", e.target.value)} />
+              <input id="joinDate" type="date" max={todayISO()} className={inputClass(errors.joinDate)} value={form.joinDate} onChange={(e) => set("joinDate", e.target.value)} />
             </Field>
           )}
         </Section>
@@ -173,7 +204,8 @@ export default function MemberFormPage() {
           <>
             <PersonFields form={form} set={set} errors={errors} config={config} files={files} pickFile={pickFile} existingDocs={existingDocs} />
 
-            {!isEdit && (
+            {/* Honorary / Emeritus have no fee, so there is no payment to record. */}
+            {!isEdit && !typeInfo(config, type)?.adminOnly && (
               <Section title="Payment received">
                 <Field label="Amount (₹)" htmlFor="payment.amount" required error={errors["payment.amount"]}>
                   <input id="payment.amount" type="number" min="0" inputMode="numeric" className={inputClass(errors["payment.amount"])} value={form.payment.amount} onChange={(e) => set("payment.amount", e.target.value)} />
@@ -190,7 +222,7 @@ export default function MemberFormPage() {
                   <input id="payment.reference" className={inputClass(errors["payment.reference"])} value={form.payment.reference} onChange={(e) => set("payment.reference", e.target.value)} />
                 </Field>
                 <Field label="Payment date" htmlFor="payment.date" required error={errors["payment.date"]}>
-                  <input id="payment.date" type="date" className={inputClass(errors["payment.date"])} value={form.payment.date} onChange={(e) => set("payment.date", e.target.value)} />
+                  <input id="payment.date" type="date" max={todayISO()} className={inputClass(errors["payment.date"])} value={form.payment.date} onChange={(e) => set("payment.date", e.target.value)} />
                 </Field>
               </Section>
             )}

@@ -73,7 +73,7 @@ export default function PublicMembersPage() {
           <option value="">All statuses</option>
           <option value="ACTIVE">Active</option>
           <option value="EXPIRED">Expired</option>
-          <option value="INACTIVE">Inactive</option>
+          <option value="INACTIVE">Debarred</option>
         </select>
       </div>
 

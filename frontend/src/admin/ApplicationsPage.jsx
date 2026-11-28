@@ -8,10 +8,6 @@ import { Alert, EmptyState, PageHeader, Spinner, inputClass } from "../ui/form";
 
 const TABS = [
   ["PENDING", "Paid, awaiting review"],
-  ["UNPAID", "Not paid yet"],
-  ["PAID", "Registered"],
-  ["REJECTED", "Rejected"],
-  ["CANCELLED", "Cancelled"],
 ];
 
 const EMPTY = {
@@ -23,7 +19,7 @@ const EMPTY = {
 export default function ApplicationsPage() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const status = params.get("status") || "PENDING";
+  const status = TABS.some(([k]) => k === params.get("status")) ? params.get("status") : "PENDING";
   const page = Number(params.get("page") || 1);
   const [searchInput, setSearchInput] = useState(params.get("search") || "");
   const search = params.get("search") || "";

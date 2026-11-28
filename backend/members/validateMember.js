@@ -1,4 +1,4 @@
-const { isMembershipType, GENDERS, ID_PROOF_TYPES, PAYMENT_MODES } = require("../config/membership");
+const { isMembershipType, isAdminOnlyType, GENDERS, ID_PROOF_TYPES, PAYMENT_MODES } = require("../config/membership");
 const { parseDateOnly, todayIST, ageOn } = require("../shared/dates");
 const { AADHAAR_LINE_MAX } = require("../digilocker/aadhaar");
 const { normalizePan, panProblem, holderType } = require("../pan/pan");
@@ -114,6 +114,8 @@ function validateMember(input, { files = {}, existing = null, mode = "admin", aa
 
   const type = isNew ? s(input.membershipType) : existing.membershipType;
   if (!isMembershipType(type)) errors.membershipType = "Select a membership type.";
+  // Honorary / Emeritus are conferred by the Society: only the admin can register them.
+  else if (mode === "public" && isAdminOnlyType(type)) errors.membershipType = "This membership is conferred by the Society and cannot be applied for.";
   data.membershipType = type;
   const isInstitution = type === "INSTITUTIONAL";
 
@@ -185,7 +187,10 @@ function validateMember(input, { files = {}, existing = null, mode = "admin", aa
       if (!data.joinDate) errors.joinDate = "Enter a valid date.";
       else if (data.joinDate > todayIST()) errors.joinDate = "Date of joining cannot be in the future.";
     }
-    data.payment = validatePayment(input.payment || {}, errors, { defaultDate: data.joinDate });
+    // Honorary / Emeritus are conferred free: no payment is asked for (recorded as waived, no receipt).
+    data.payment = isAdminOnlyType(type)
+      ? { amount: 0, mode: "Waived", reference: "", date: data.joinDate }
+      : validatePayment(input.payment || {}, errors, { defaultDate: data.joinDate });
   }
 
   return { data, errors };

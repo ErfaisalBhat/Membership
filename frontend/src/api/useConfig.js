@@ -39,3 +39,9 @@ export function useConfig() {
 export function typeInfo(config, key) {
   return config?.membershipTypes.find((t) => t.key === key) || null;
 }
+
+// The plans people can apply for on the website. Honorary and Emeritus (adminOnly) are
+// conferred by the Society and added by the admin only.
+export function joinableTypes(config) {
+  return (config?.membershipTypes || []).filter((t) => !t.adminOnly);
+}

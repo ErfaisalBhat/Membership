@@ -1,19 +1,10 @@
 import { Link } from "react-router-dom";
-import { useConfig } from "../api/useConfig";
+import { joinableTypes, useConfig } from "../api/useConfig";
 import { formatMoney } from "../shared/format";
 import { Alert, Spinner } from "../ui/form";
 import Icon from "../ui/icons";
 
 // Compact home page: small type and tight spacing to keep scrolling short.
-
-// The order of the join page: details, then payment, then review.
-const STEPS = [
-  { icon: "dashboard", title: "Choose a category", text: "Pick the membership category that fits you." },
-  { icon: "mail", title: "Verify your email", text: "We send a 6-digit code. Your ID card is delivered to this address." },
-  { icon: "id", title: "Fill the form", text: "Your details, address, affiliation and documents (photo, signature, ID)." },
-  { icon: "card", title: "Pay online", text: "Pay the fee by UPI, card or net banking." },
-  { icon: "shield", title: "Application review", text: "The Membership Section reviews your application. Once approved, your membership number and ID card are emailed to you." },
-];
 
 // Colours of each Component card: `from`/`to` for the badge gradient, `tint` for the soft background.
 // The text of the cards comes from backend/config/content.js.
@@ -82,7 +73,7 @@ export default function HomePage() {
           <SectionTitle label="Membership Plans" title="Categories of Membership and Prescribed Fees" />
 
           <div className="mt-3 grid gap-3 md:grid-cols-3">
-            {config.membershipTypes.map((t) => {
+            {joinableTypes(config).map((t) => {
               const saving = t.regularFee > t.fee ? t.regularFee - t.fee : 0;
               return (
                 <article
@@ -139,53 +130,26 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* How to join: light band, numbered steps with icons joined by a gold line. */}
-      <section className="border-y border-slate-200 bg-gradient-to-b from-slate-50 to-white">
-        <div className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
-          <SectionTitle label="Application Process" title="How to Join" />
-
-          <ol className="relative mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5 lg:gap-3">
-            {/* line joining the icons (wide screens) */}
-            <span
-              aria-hidden="true"
-              className="absolute left-[10%] right-[10%] top-[18px] hidden h-px lg:block"
-              style={{ background: "linear-gradient(90deg, transparent, #d9c29b 12%, #d9c29b 88%, transparent)" }}
-            />
-            {STEPS.map((s, i) => (
-              <li key={s.title} className="group relative flex flex-col items-center text-center">
-                <span className="relative z-10 flex h-9 w-9 items-center justify-center rounded-full bg-white ring-1 ring-slate-200 shadow-[0_3px_10px_-4px_rgba(15,23,42,0.18)] transition duration-300 group-hover:ring-[#d9c29b]">
-                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-brand-800 to-brand-600 text-white">
-                    <Icon name={s.icon} className="h-3.5 w-3.5" />
-                  </span>
-                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-[#b08d57] text-[8px] font-bold text-white ring-2 ring-white">
-                    {i + 1}
-                  </span>
-                </span>
-                <div className="mt-1.5 w-full flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 transition duration-300 group-hover:border-slate-300">
-                  <h3 className="text-xs font-semibold text-slate-900">{s.title}</h3>
-                  <p className="mt-0.5 text-[10.5px] leading-snug text-slate-600">{s.text}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
       {/* Terms and Conditions of Membership */}
       <section className="mx-auto max-w-6xl px-4 py-4 sm:px-6">
         <div className="rounded-lg border border-slate-200 bg-white px-4 py-3">
           <h2 className="text-[15px] font-semibold text-slate-900">Terms and Conditions of Membership</h2>
-          {/* Two columns on wide screens to keep the page short. */}
-          <ol className="mt-2 grid gap-x-6 gap-y-1.5 text-[11px] leading-snug text-slate-600 lg:grid-cols-2">
+          {/* Two flowing columns on wide screens (no row-height gaps between short and long items). */}
+          <ol className="mt-2 gap-x-6 text-[11px] leading-snug text-slate-600 lg:columns-2">
             {content.terms.map((t, i) => (
-              <li key={t.title} className="flex gap-2">
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[9px] font-semibold text-brand-700">{i + 1}</span>
-                <div>
-                  <span className="font-semibold text-slate-900">{t.title}.</span> {t.text}
+              <li key={t.title} className="mb-1.5 flex break-inside-avoid gap-2">
+                <span className="mt-px flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full bg-brand-50 text-[9px] font-semibold text-brand-700">{i + 1}</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-justify hyphens-auto">
+                    <span className="font-semibold text-slate-900">{t.title}.</span> {t.text}
+                  </p>
                   {t.items && (
-                    <ol className="mt-0.5 pl-1">
+                    <ol className="mt-0.5 space-y-0.5">
                       {t.items.map((item, j) => (
-                        <li key={item}>({String.fromCharCode(97 + j)}) {item}</li>
+                        <li key={item} className="flex gap-1">
+                          <span className="w-4 shrink-0">({String.fromCharCode(97 + j)})</span>
+                          <span className="flex-1">{item}</span>
+                        </li>
                       ))}
                     </ol>
                   )}

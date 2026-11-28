@@ -55,7 +55,6 @@ function Sidebar({ pending, collapsed = false, onToggle }) {
         <NavItem to="/admin" end icon="dashboard" label="Dashboard" collapsed={collapsed} />
         <NavItem to="/admin/members" icon="users" label="Members" collapsed={collapsed} />
         <NavItem to="/admin/applications" icon="inbox" label="Applications" collapsed={collapsed} badge={pending} />
-        <NavItem to="/admin/payments" icon="card" label="Payments" collapsed={collapsed} />
         <NavItem to="/admin/fees" icon="id" label="Plan fees" collapsed={collapsed} />
         <NavItem to="/admin/members/new" icon="plus" label="Add member" collapsed={collapsed} />
       </nav>
@@ -117,7 +116,7 @@ export default function AdminLayout() {
             <p className="hidden truncate text-[11px] font-semibold uppercase tracking-widest text-zinc-500 lg:block">{config?.orgName || "Administration"}</p>
           </div>
           <div className="flex shrink-0 items-center gap-4">
-            <span className="hidden text-sm text-zinc-700 sm:inline">{username}</span>
+            <span className="hidden text-sm text-zinc-700 capitalize sm:inline">{username}</span>
             <button
               type="button"
               onClick={logout}

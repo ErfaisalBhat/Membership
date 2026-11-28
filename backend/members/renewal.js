@@ -16,10 +16,11 @@ function renewalPeriod(member, startIfExpired) {
 function renewalInfo(member) {
   const type = MEMBERSHIP_TYPES[member.membershipType];
   if (!type || !type.validityMonths) return { canRenew: false, reason: "Life memberships never expire, so there is nothing to renew." };
+  if (type.adminOnly) return { canRenew: false, reason: `${type.label}ship is extended by the Society. Please contact the membership office.` };
 
   const status = effectiveStatus(member);
   if (status === "INACTIVE") {
-    return { canRenew: false, reason: "Your membership is inactive. Please contact the membership office." };
+    return { canRenew: false, reason: "Your membership has been debarred. Please contact the membership office." };
   }
 
   const today = todayIST();

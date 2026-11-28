@@ -8,11 +8,17 @@ import { Alert, PageHeader, Spinner } from "../ui/form";
 
 // One cell of the key-figures strip.
 function Figure({ label, value, note, to }) {
-  return (
-    <Link to={to} className="group flex flex-col bg-white px-3 py-2 hover:bg-zinc-50">
+  const body = (
+    <>
       <span className="truncate text-[10px] font-semibold uppercase leading-4 tracking-wider text-zinc-500">{label}</span>
       <span className="text-lg font-bold leading-6 tabular-nums text-zinc-900">{value ?? "–"}</span>
       <span className="truncate text-[11px] leading-4 text-zinc-500 group-hover:text-zinc-700">{note}</span>
+    </>
+  );
+  if (!to) return <div className="flex flex-col bg-white px-3 py-2">{body}</div>;
+  return (
+    <Link to={to} className="group flex flex-col bg-white px-3 py-2 hover:bg-zinc-50">
+      {body}
     </Link>
   );
 }
@@ -69,10 +75,7 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" />
       {overview.paymentsNeedingAttention > 0 && (
         <Alert kind="warning" title={`${overview.paymentsNeedingAttention} payment(s) need attention`}>
-          Money was received but something went wrong (for example, paid twice).{" "}
-          <Link to="/admin/payments?attention=1" className="font-semibold underline">
-            Review payments
-          </Link>
+          Money was received but something went wrong (for example, paid twice).
         </Alert>
       )}
 
@@ -87,7 +90,6 @@ export default function DashboardPage() {
           label="Online this month"
           value={formatMoney(overview.onlineThisMonth.total)}
           note={`${overview.onlineThisMonth.count} payment(s)`}
-          to="/admin/payments?status=PAID"
         />
       </section>
 
@@ -123,7 +125,7 @@ export default function DashboardPage() {
           )}
         </Panel>
 
-        <Panel title="Latest online payments" to="/admin/payments">
+        <Panel title="Latest online payments">
           {payments.length === 0 ? (
             <p className="px-5 py-10 text-center text-sm text-zinc-500">No online payments yet.</p>
           ) : (

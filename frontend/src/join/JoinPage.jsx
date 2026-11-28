@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 import { ApiError, api, joinTokenStore } from "../api/client";
-import { typeInfo, useConfig } from "../api/useConfig";
+import { joinableTypes, typeInfo, useConfig } from "../api/useConfig";
 import { formatDate, formatMoney } from "../shared/format";
 import { emptyPerson, setIn } from "../shared/formState";
 import PersonFields from "../members/PersonFields";
@@ -309,9 +309,10 @@ export default function JoinPage() {
     if (step !== "loading") scrollTop();
   }, [step]);
 
-  // An unknown ?type= in the address: forget it, so the plan is chosen on the plan step.
+  // An unknown ?type= in the address (or Honorary / Emeritus, which can't be applied for):
+  // forget it, so the plan is chosen on the plan step.
   useEffect(() => {
-    if (config && plan && !typeInfo(config, plan)) setPlan("");
+    if (config && plan && !joinableTypes(config).some((t) => t.key === plan)) setPlan("");
   }, [config, plan]);
 
   function choosePlan(key) {
@@ -856,17 +857,25 @@ export default function JoinPage() {
             </label>
             <div className="rounded-md bg-slate-50 p-4">
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Terms and Conditions of Membership</p>
-              <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-sm text-slate-600">
-                {config.content.terms.map((t) => (
-                  <li key={t.title}>
-                    <span className="font-semibold text-slate-700">{t.title}.</span> {t.text}
-                    {t.items && (
-                      <span className="block pl-1">
-                        {t.items.map((item, j) => (
-                          <span key={item} className="block">({String.fromCharCode(97 + j)}) {item}</span>
-                        ))}
-                      </span>
-                    )}
+              <ol className="mt-2 space-y-1.5 text-sm text-slate-600">
+                {config.content.terms.map((t, i) => (
+                  <li key={t.title} className="flex gap-2">
+                    <span className="w-5 shrink-0 text-right tabular-nums">{i + 1}.</span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-justify hyphens-auto">
+                        <span className="font-semibold text-slate-700">{t.title}.</span> {t.text}
+                      </p>
+                      {t.items && (
+                        <ol className="mt-0.5 space-y-0.5">
+                          {t.items.map((item, j) => (
+                            <li key={item} className="flex gap-1.5">
+                              <span className="w-6 shrink-0">({String.fromCharCode(97 + j)})</span>
+                              <span className="flex-1">{item}</span>
+                            </li>
+                          ))}
+                        </ol>
+                      )}
+                    </div>
                   </li>
                 ))}
               </ol>
@@ -947,7 +956,7 @@ export default function JoinPage() {
               {!config.onlinePayments.enabled && config.paymentPages?.[application.membershipType] ? (
                 <div className="space-y-4">
                   <p className="text-sm text-slate-600">
-                    Pay on the Zoho payment page. Please use <strong>{application.email}</strong> as your email there, so your payment is matched to
+                    Pay on the payment page. Please use <strong>{application.email}</strong> as your email there, so your payment is matched to
                     your application.
                   </p>
                   <a
@@ -964,12 +973,12 @@ export default function JoinPage() {
                       }
                     }}
                   >
-                    Pay on Zoho
+                    Pay
                   </a>
                   {pagePaying && (
                     <p className="flex items-center gap-2 rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
                       <span className="h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-slate-300 border-t-brand-700" />
-                      Waiting for Zoho to confirm your payment. This page moves on by itself once it does.
+                      Waiting for your payment to be confirmed. This page moves on by itself once it does.
                     </p>
                   )}
                   {/* Only once the Zoho page has been opened: before that, nothing can have been paid. */}

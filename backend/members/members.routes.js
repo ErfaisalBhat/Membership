@@ -4,7 +4,7 @@ const Member = require("./Member");
 const { requireAdmin } = require("../auth/requireAdmin");
 const { MEMBERSHIP_TYPES } = require("../config/membership");
 const { validateMember, validatePayment } = require("./validateMember");
-const { nextMembershipId } = require("./membershipId");
+const { nextMembershipId, normalizeMembershipId, membershipIdProblem } = require("./membershipId");
 const { computeExpiry, todayIST } = require("../shared/dates");
 const { buildMemberFilter, pagination } = require("./query");
 const { serializeMember, serializeRow } = require("./serialize");
@@ -53,6 +53,14 @@ function validationFailed(res, errors) {
   return res.status(400).json({ message: "Please correct the highlighted fields.", errors });
 }
 
+const ID_TAKEN = "Another member already has this membership ID.";
+
+// "" when no other member has this ID (exceptId: the member being edited).
+async function idTaken(membershipId, exceptId = null) {
+  const filter = { membershipId, ...(exceptId ? { _id: { $ne: exceptId } } : {}) };
+  return (await Member.exists(filter)) ? ID_TAKEN : "";
+}
+
 // GET /api/members?search=&type=&status=&expiring=30&page=&limit=
 router.get("/", async (req, res) => {
   const filter = buildMemberFilter(req.query, ADMIN_SEARCH_FIELDS);
@@ -94,6 +102,12 @@ router.post("/", memberUpload, async (req, res) => {
   if (!errors.email && (await Member.exists({ email: data.email }))) {
     errors.email = "A member with this email address already exists.";
   }
+  // Membership ID typed by the admin (optional): empty = the next number automatically.
+  const typedId = normalizeMembershipId(input.membershipId);
+  if (typedId) {
+    const problem = membershipIdProblem(typedId) || (await idTaken(typedId));
+    if (problem) errors.membershipId = problem;
+  }
   if (Object.keys(errors).length) {
     await removeUploaded(files);
     return validationFailed(res, errors);
@@ -103,7 +117,7 @@ router.post("/", memberUpload, async (req, res) => {
   const expiryDate = computeExpiry(data.joinDate, MEMBERSHIP_TYPES[data.membershipType].validityMonths);
   const member = new Member({
     ...fields,
-    membershipId: await nextMembershipId(data.joinDate),
+    membershipId: typedId || (await nextMembershipId(data.membershipType)),
     status: expiryDate && expiryDate < todayIST() ? "EXPIRED" : "ACTIVE",
     source: "ADMIN",
     expiryDate,
@@ -117,6 +131,9 @@ router.post("/", memberUpload, async (req, res) => {
     await removeUploaded(files);
     if (err.code === 11000 && err.keyPattern && err.keyPattern.email) {
       return validationFailed(res, { email: "A member with this email address already exists." });
+    }
+    if (err.code === 11000 && err.keyPattern && err.keyPattern.membershipId) {
+      return validationFailed(res, { membershipId: ID_TAKEN });
     }
     throw err;
   }
@@ -153,6 +170,14 @@ router.put("/:id", memberUpload, async (req, res) => {
   if (!errors.email && (await Member.exists({ email: data.email, _id: { $ne: member._id } }))) {
     errors.email = "Another member already uses this email address.";
   }
+  // Membership ID: may be changed, but never to one another member has.
+  const typedId = normalizeMembershipId(input.membershipId);
+  if (!typedId) errors.membershipId = "Enter the membership ID.";
+  else if (typedId !== member.membershipId) {
+    const problem = membershipIdProblem(typedId) || (await idTaken(typedId, member._id));
+    if (problem) errors.membershipId = problem;
+    else data.membershipId = typedId;
+  }
   if (Object.keys(errors).length) {
     await removeUploaded(files);
     return validationFailed(res, errors);
@@ -173,6 +198,9 @@ router.put("/:id", memberUpload, async (req, res) => {
     if (err.code === 11000 && err.keyPattern && err.keyPattern.email) {
       return validationFailed(res, { email: "Another member already uses this email address." });
     }
+    if (err.code === 11000 && err.keyPattern && err.keyPattern.membershipId) {
+      return validationFailed(res, { membershipId: ID_TAKEN });
+    }
     throw err;
   }
   await removeStoredFiles(replaced);
@@ -186,7 +214,7 @@ router.post("/:id/renew", async (req, res) => {
   const months = MEMBERSHIP_TYPES[member.membershipType].validityMonths;
   if (!months) return res.status(400).json({ message: "Life memberships do not need renewal." });
   if (member.status === "INACTIVE") {
-    return res.status(400).json({ message: "This membership is inactive. Reinstate it before renewing." });
+    return res.status(400).json({ message: "This member is debarred. Reinstate them before renewing." });
   }
 
   const errors = {};
@@ -217,12 +245,12 @@ router.post("/:id/status", async (req, res) => {
   const reason = String((req.body && req.body.reason) || "").trim();
 
   if (action === "deactivate") {
-    if (!reason) return validationFailed(res, { reason: "Enter the reason for making this membership inactive." });
+    if (!reason) return validationFailed(res, { reason: "Enter the reason for debarring this member." });
     if (reason.length > 300) return validationFailed(res, { reason: "Must be at most 300 characters." });
     member.status = "INACTIVE";
     member.statusReason = reason;
   } else if (action === "reinstate") {
-    if (member.status !== "INACTIVE") return res.status(400).json({ message: "This membership is not inactive." });
+    if (member.status !== "INACTIVE") return res.status(400).json({ message: "This member is not debarred." });
     const expired = member.expiryDate && member.expiryDate < todayIST();
     member.status = expired ? "EXPIRED" : "ACTIVE";
     member.statusReason = "";

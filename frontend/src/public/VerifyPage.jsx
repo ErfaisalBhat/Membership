@@ -8,7 +8,7 @@ import { Spinner } from "../ui/form";
 const VERDICT = {
   ACTIVE: { title: "Valid membership", tone: "border-green-200 bg-green-50 text-green-900", icon: "check", iconTone: "bg-green-600" },
   EXPIRED: { title: "Membership expired", tone: "border-amber-200 bg-amber-50 text-amber-900", icon: "refresh", iconTone: "bg-amber-500" },
-  INACTIVE: { title: "Membership not active", tone: "border-slate-200 bg-slate-100 text-slate-800", icon: "close", iconTone: "bg-slate-500" },
+  INACTIVE: { title: "Member debarred", tone: "border-slate-200 bg-slate-100 text-slate-800", icon: "close", iconTone: "bg-slate-500" },
 };
 
 // Opened by scanning the QR code on a member's ID card.

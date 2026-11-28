@@ -67,7 +67,7 @@ export default function MembersPage() {
     { label: "All", count: stats?.total, active: !status && !expiring, set: { status: "", expiring: "" } },
     { label: "Active", count: stats?.active, active: status === "ACTIVE", set: { status: "ACTIVE", expiring: "" } },
     { label: "Expired", count: stats?.expired, active: status === "EXPIRED", set: { status: "EXPIRED", expiring: "" } },
-    { label: "Inactive", count: stats?.inactive, active: status === "INACTIVE", set: { status: "INACTIVE", expiring: "" } },
+    { label: "Debarred", count: stats?.inactive, active: status === "INACTIVE", set: { status: "INACTIVE", expiring: "" } },
     { label: "Expiring in 30 days", count: stats?.expiringSoon, active: expiring, set: { expiring: "30", status: "" } },
   ];
 

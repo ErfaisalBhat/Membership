@@ -63,12 +63,6 @@ export default function FeesPage() {
       <PageHeader title="Plan fees" />
       <form onSubmit={save} className="space-y-5 rounded-lg border border-slate-200 bg-white p-6 shadow-xs">
         {message && <Alert kind={message.kind}>{message.text}</Alert>}
-        {paymentPages.length > 0 && (
-          <Alert kind="warning" title="Change the Zoho payment pages too">
-            Each Zoho payment page has its fee fixed in Zoho. After changing a fee here, change the amount on that plan's Zoho payment page as
-            well; otherwise applicants pay the old amount there and their payment is marked as the wrong amount.
-          </Alert>
-        )}
         {(fees || []).map((f) => {
           const v = form[f.key] || {};
           const waiver = Number(v.regularFee) - Number(v.fee);

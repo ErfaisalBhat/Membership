@@ -263,6 +263,14 @@ async function sendCardEmail(member, kind = "welcome", { payment = null } = {}) 
 async function sendReminderEmail(member, daysLeft) {
   const when = daysLeft <= 0 ? "today" : daysLeft === 1 ? "tomorrow" : `in ${daysLeft} days`;
   const expiry = dottedDate(member.expiryDate);
+  const type = MEMBERSHIP_TYPES[member.membershipType];
+  // Honorary membership is extended by the Society, not renewed online.
+  const how = type && type.adminOnly
+    ? [p(`Your ${type.label.toLowerCase()}ship is extended by the Society. Please contact the membership office if you have any questions.`)]
+    : [
+        p("You can renew online from your member account. Log in with your registered email address; we will send you a one-time code."),
+        button("Renew my membership", accountUrl()),
+      ];
   return send({
     to: member.email,
     subject: `${ORG_CODE} Membership renewal reminder – expires on ${expiry}`,
@@ -271,8 +279,7 @@ async function sendReminderEmail(member, daysLeft) {
     blocks: [
       p(`Your membership expires ${when}.`), // the date is in the table below
       table(detailsRows(member)),
-      p("You can renew online from your member account. Log in with your registered email address; we will send you a one-time code."),
-      button("Renew my membership", accountUrl()),
+      ...how,
     ],
   });
 }

@@ -7,7 +7,6 @@ import PublicLayout from "./layout/PublicLayout";
 import DashboardPage from "./admin/DashboardPage";
 import ApplicationsPage from "./admin/ApplicationsPage";
 import ApplicationDetailPage from "./admin/ApplicationDetailPage";
-import PaymentsPage from "./admin/PaymentsPage";
 import FeesPage from "./admin/FeesPage";
 import MembersPage from "./members/MembersPage";
 import MemberFormPage from "./members/MemberFormPage";
@@ -60,7 +59,6 @@ export default function App() {
         <Route path="members/:id/edit" element={<MemberFormPage />} />
         <Route path="applications" element={<ApplicationsPage />} />
         <Route path="applications/:id" element={<ApplicationDetailPage />} />
-        <Route path="payments" element={<PaymentsPage />} />
         <Route path="fees" element={<FeesPage />} />
         <Route path="password" element={<ChangePasswordPage />} />
       </Route>

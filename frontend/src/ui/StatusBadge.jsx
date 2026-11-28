@@ -16,7 +16,7 @@ const STYLES = {
 const LABELS = {
   ACTIVE: "Active",
   EXPIRED: "Expired",
-  INACTIVE: "Inactive",
+  INACTIVE: "Debarred",
   UNPAID: "Not paid yet",
   PENDING: "Awaiting review",
   APPROVED: "Approved, awaiting payment",

@@ -4,8 +4,10 @@ import { formatDate, todayISO } from "../shared/format";
 import { Alert, Field, buttonClass, inputClass } from "../ui/form";
 
 export default function RenewPanel({ member, config, onDone }) {
-  const fee = config.membershipTypes.find((t) => t.key === member.membershipType)?.fee ?? "";
-  const [form, setForm] = useState({ amount: fee, mode: "", reference: "", date: todayISO() });
+  const type = config.membershipTypes.find((t) => t.key === member.membershipType);
+  const fee = type?.fee ?? "";
+  // Honorary is extended free of charge.
+  const [form, setForm] = useState({ amount: fee, mode: type?.adminOnly ? "Waived" : "", reference: "", date: todayISO() });
   const [errors, setErrors] = useState({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -57,7 +59,7 @@ export default function RenewPanel({ member, config, onDone }) {
           <input id="r-ref" className={inputClass(errors["payment.reference"])} value={form.reference} onChange={set("reference")} />
         </Field>
         <Field label="Payment date" htmlFor="r-date" required error={errors["payment.date"]}>
-          <input id="r-date" type="date" className={inputClass(errors["payment.date"])} value={form.date} onChange={set("date")} />
+          <input id="r-date" type="date" max={todayISO()} className={inputClass(errors["payment.date"])} value={form.date} onChange={set("date")} />
         </Field>
       </div>
       <button type="submit" className={`${buttonClass.primary} w-full`} disabled={busy}>

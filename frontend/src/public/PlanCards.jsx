@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { joinableTypes } from "../api/useConfig";
 import { formatMoney } from "../shared/format";
 import Icon from "../ui/icons";
 
@@ -18,7 +19,7 @@ const WHO = {
 export default function PlanCards({ config, selected, onSelect }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" role={onSelect ? "radiogroup" : undefined}>
-      {config.membershipTypes.map((t) => {
+      {joinableTypes(config).map((t) => {
         const active = selected === t.key;
         const body = (
           <>
