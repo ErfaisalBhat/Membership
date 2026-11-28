@@ -48,9 +48,10 @@ module.exports = {
   // "Components of the Society" on the home page.
   componentsIntro: "Under the Clauses of the Memorandum of Association and Rule, the following are Components of the Society.",
   components: [
-    { short: "ASSSR", name: "Asiatic Society for Social Science Research", text: "The parent body, constituted under the Societies Registration Act, 1860, with an all-India area of operation. Its object is to promote and coordinate research in the social sciences." },
-    { short: "VMI", name: "Varāhamihira Multidisciplinary Institute", text: "A Component of the Society, set up to carry out the Society's objects in multidisciplinary teaching, research and training." },
-    { short: "DHC", name: "Deccan History Congress", text: "A Component of the Society, serving as a forum for academic exchange through annual sessions, conferences and seminars." },
-    { short: "JASSSR", name: "Journal of Asiatic Society for Social Science Research", text: "A Component of the Society that provides a publishing platform for original research in the social sciences." },
+    // url: the component's own website, linked from its card (empty = no link)
+    { short: "ASSSR", name: "Asiatic Society for Social Science Research", url: "https://www.asssr.org/", text: "The parent body, constituted under the Societies Registration Act, 1860, with an all-India area of operation. Its object is to promote and coordinate research in the social sciences." },
+    { short: "VMI", name: "Varāhamihira Multidisciplinary Institute", url: "https://www.vminstitute.in/", text: "A Component of the Society, set up to carry out the Society's objects in multidisciplinary teaching, research and training." },
+    { short: "DHC", name: "Deccan History Congress", url: "https://www.deccanhistorycongress.in/", text: "A Component of the Society, serving as a forum for academic exchange through annual sessions, conferences and seminars." },
+    { short: "JASSSR", name: "Journal of Asiatic Society for Social Science Research", url: "https://www.asssr.in/index.php/jasssr", text: "A Component of the Society that provides a publishing platform for original research in the social sciences." },
   ],
 };

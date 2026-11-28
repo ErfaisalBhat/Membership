@@ -169,9 +169,13 @@ export default function HomePage() {
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {(content.components || []).map((comp) => {
               const c = { ...DEFAULT_STYLE, badge: comp.short.slice(0, 2), ...COMPONENT_STYLE[comp.short] };
+              // With a url the whole card is a link to the component's website (new tab).
+              const Card = comp.url ? "a" : "article";
+              const linkProps = comp.url ? { href: comp.url, target: "_blank", rel: "noopener noreferrer", title: `Open the ${comp.short} website` } : {};
               return (
-                <article
+                <Card
                   key={comp.short}
+                  {...linkProps}
                   className="group relative flex flex-col overflow-hidden rounded-lg border border-slate-200 bg-white p-3 shadow-[0_1px_2px_rgba(15,23,42,0.04)] transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_-8px_rgba(15,23,42,0.18)]"
                 >
                   {/* accent bar */}
@@ -197,7 +201,7 @@ export default function HomePage() {
 
                   <h3 className="relative mt-2 text-xs font-semibold leading-snug text-slate-900">{comp.name}</h3>
                   <p className="relative mt-1 text-[10.5px] leading-snug text-slate-600">{comp.text}</p>
-                </article>
+                </Card>
               );
             })}
           </div>

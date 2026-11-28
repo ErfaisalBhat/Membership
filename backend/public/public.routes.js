@@ -22,6 +22,7 @@ const panCheck = require("../pan/service");
 const { buildMemberFilter, pagination } = require("../members/query");
 const { serializePublicRow, effectiveStatus, typeLabel } = require("../members/serialize");
 const { filePath } = require("../documents/upload");
+const visitors = require("./visitors");
 
 const router = express.Router();
 
@@ -69,6 +70,13 @@ router.get("/members", async (req, res) => {
     Member.countDocuments(filter),
   ]);
   res.json({ items: items.map(serializePublicRow), total, page, pages: Math.max(1, Math.ceil(total / limit)) });
+});
+
+// POST /api/public/presence { id } -> { online, visitors } — the strip at the bottom of the website
+router.post("/presence", async (req, res) => {
+  const id = req.body && req.body.id;
+  if (!visitors.isVisitorId(id)) return res.status(400).json({ message: "Invalid visitor id." });
+  res.json(await visitors.ping(id));
 });
 
 const validToken = (t) => /^[a-f0-9]{32}$/.test(String(t || ""));

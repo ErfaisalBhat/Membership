@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useConfig } from "../api/useConfig";
 import Icon from "../ui/icons";
 import OrgHeader from "./OrgHeader";
+import SiteStats from "./SiteStats";
 
 const links = [
   { to: "/", label: "Home", end: true },
@@ -100,6 +101,7 @@ export default function PublicLayout() {
         <div>
           <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-4 text-xs text-brand-200 sm:px-6">
             <span>© {year} {config?.orgName || ""}</span>
+            <SiteStats />
           </div>
         </div>
       </footer>
