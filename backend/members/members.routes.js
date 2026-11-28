@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const Member = require("./Member");
 const { requireAdmin } = require("../auth/requireAdmin");
 const { MEMBERSHIP_TYPES } = require("../config/membership");
-const { validateMember, validatePayment } = require("./validateMember");
+const { validateMember, validatePayment, normalizeEmail } = require("./validateMember");
 const { nextMembershipId, normalizeMembershipId, membershipIdProblem } = require("./membershipId");
 const { computeExpiry, todayIST } = require("../shared/dates");
 const { buildMemberFilter, pagination } = require("./query");
@@ -22,7 +22,9 @@ const {
   filePath,
   removeStoredFiles,
   removeUploaded,
+  copyStoredFile,
   isDocumentField,
+  DOCUMENT_FIELDS,
 } = require("../documents/upload");
 
 const router = express.Router();
@@ -55,10 +57,15 @@ function validationFailed(res, errors) {
 
 const ID_TAKEN = "Another member already has this membership ID.";
 
-// "" when no other member has this ID (exceptId: the member being edited).
-async function idTaken(membershipId, exceptId = null) {
-  const filter = { membershipId, ...(exceptId ? { _id: { $ne: exceptId } } : {}) };
-  return (await Member.exists(filter)) ? ID_TAKEN : "";
+// One person (email) can hold several plans, one record each.
+const planTaken = (type) =>
+  `This person already has the ${MEMBERSHIP_TYPES[type] ? MEMBERSHIP_TYPES[type].label : type} plan. Choose another plan.`;
+
+// "" when the ID may be used for this record: the person's own other plans may share it,
+// nobody else may. exceptId: the member being edited.
+async function idProblem(membershipId, { email, membershipType }, exceptId = null) {
+  const holders = await Member.find({ membershipId, ...(exceptId ? { _id: { $ne: exceptId } } : {}) }, "email membershipType").lean();
+  return holders.some((h) => h.email !== email || h.membershipType === membershipType) ? ID_TAKEN : "";
 }
 
 // GET /api/members?search=&type=&status=&expiring=30&page=&limit=
@@ -97,15 +104,34 @@ router.post("/", memberUpload, async (req, res) => {
     return res.status(400).json({ message: "Invalid form data." });
   }
 
-  const { data, errors } = validateMember(input, { files });
+  // "Add another plan" for an existing member (copyFrom = that member's record): their
+  // documents that were not uploaded again are copied over.
+  let source = null;
+  if (input.copyFrom) {
+    source = mongoose.isValidObjectId(input.copyFrom) ? await Member.findById(input.copyFrom) : null;
+    if (!source) {
+      await removeUploaded(files);
+      return res.status(400).json({ message: "The member to add a plan for was not found." });
+    }
+    for (const key of Object.keys(DOCUMENT_FIELDS)) {
+      if (files[key]) continue;
+      const copy = await copyStoredFile(source.documents && source.documents[key]);
+      if (copy) files[key] = copy;
+    }
+  }
+  // Same person (email unchanged): their Aadhaar (DigiLocker) check carries over.
+  const samePerson = !!source && normalizeEmail(input.email) === source.email;
+  const aadhaarVerified = samePerson && !!(source.aadhaar && source.aadhaar.verified);
+
+  const { data, errors } = validateMember(input, { files, aadhaarVerified });
   Object.assign(errors, await checkFileContents(files));
-  if (!errors.email && (await Member.exists({ email: data.email }))) {
-    errors.email = "A member with this email address already exists.";
+  if (!errors.email && !errors.membershipType && (await Member.exists({ email: data.email, membershipType: data.membershipType }))) {
+    errors.membershipType = planTaken(data.membershipType);
   }
   // Membership ID typed by the admin (optional): empty = the next number automatically.
   const typedId = normalizeMembershipId(input.membershipId);
   if (typedId) {
-    const problem = membershipIdProblem(typedId) || (await idTaken(typedId));
+    const problem = membershipIdProblem(typedId) || (await idProblem(typedId, data));
     if (problem) errors.membershipId = problem;
   }
   if (Object.keys(errors).length) {
@@ -114,6 +140,9 @@ router.post("/", memberUpload, async (req, res) => {
   }
 
   const { payment, ...fields } = data;
+  if (aadhaarVerified) fields.aadhaar = source.aadhaar.toObject();
+  // An institution's PAN checked before stays verified when it is unchanged.
+  if (samePerson && source.pan && source.pan.verified && source.pan.number === fields.pan.number) fields.pan = source.pan.toObject();
   const expiryDate = computeExpiry(data.joinDate, MEMBERSHIP_TYPES[data.membershipType].validityMonths);
   const member = new Member({
     ...fields,
@@ -130,7 +159,7 @@ router.post("/", memberUpload, async (req, res) => {
   } catch (err) {
     await removeUploaded(files);
     if (err.code === 11000 && err.keyPattern && err.keyPattern.email) {
-      return validationFailed(res, { email: "A member with this email address already exists." });
+      return validationFailed(res, { membershipType: planTaken(data.membershipType) });
     }
     if (err.code === 11000 && err.keyPattern && err.keyPattern.membershipId) {
       return validationFailed(res, { membershipId: ID_TAKEN });
@@ -148,10 +177,12 @@ router.post("/", memberUpload, async (req, res) => {
   res.status(201).json({ member: serializeMember(member), email });
 });
 
-// GET /api/members/:id
+// GET /api/members/:id  — with the person's other plans (same email).
 router.get("/:id", async (req, res) => {
   const member = await loadMember(req, res);
-  if (member) res.json({ member: serializeMember(member) });
+  if (!member) return;
+  const others = await Member.find({ email: member.email, _id: { $ne: member._id } }).sort({ joinDate: 1 }).lean();
+  res.json({ member: serializeMember(member), otherPlans: others.map(serializeRow) });
 });
 
 // PUT /api/members/:id  (multipart; files are optional and replace the old ones)
@@ -167,14 +198,15 @@ router.put("/:id", memberUpload, async (req, res) => {
 
   const { data, errors } = validateMember(input, { files, existing: member });
   Object.assign(errors, await checkFileContents(files));
-  if (!errors.email && (await Member.exists({ email: data.email, _id: { $ne: member._id } }))) {
-    errors.email = "Another member already uses this email address.";
+  const PLAN_EMAIL_TAKEN = "Another member with this email address already has this plan.";
+  if (!errors.email && (await Member.exists({ email: data.email, membershipType: member.membershipType, _id: { $ne: member._id } }))) {
+    errors.email = PLAN_EMAIL_TAKEN;
   }
-  // Membership ID: may be changed, but never to one another member has.
+  // Membership ID: may be changed, but never to one another member (another person) has.
   const typedId = normalizeMembershipId(input.membershipId);
   if (!typedId) errors.membershipId = "Enter the membership ID.";
   else if (typedId !== member.membershipId) {
-    const problem = membershipIdProblem(typedId) || (await idTaken(typedId, member._id));
+    const problem = membershipIdProblem(typedId) || (await idProblem(typedId, data, member._id));
     if (problem) errors.membershipId = problem;
     else data.membershipId = typedId;
   }
@@ -196,7 +228,7 @@ router.put("/:id", memberUpload, async (req, res) => {
   } catch (err) {
     await removeUploaded(files);
     if (err.code === 11000 && err.keyPattern && err.keyPattern.email) {
-      return validationFailed(res, { email: "Another member already uses this email address." });
+      return validationFailed(res, { email: PLAN_EMAIL_TAKEN });
     }
     if (err.code === 11000 && err.keyPattern && err.keyPattern.membershipId) {
       return validationFailed(res, { membershipId: ID_TAKEN });

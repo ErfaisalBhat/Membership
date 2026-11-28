@@ -101,6 +101,20 @@ async function removeUploaded(files) {
   await removeStoredFiles(Object.values(files).map((f) => f.filename));
 }
 
+// A copy of a saved document under a new name, shaped like an uploaded file (multer), so it
+// goes through the same checks and clean-up. Each record then owns its own file. null when
+// the file is missing on disk.
+async function copyStoredFile(doc) {
+  if (!doc || !doc.filename) return null;
+  const filename = crypto.randomBytes(16).toString("hex") + path.extname(path.basename(doc.filename));
+  try {
+    await fs.promises.copyFile(filePath(doc.filename), filePath(filename));
+  } catch {
+    return null;
+  }
+  return { filename, path: filePath(filename), originalname: doc.originalName, mimetype: doc.mimeType, size: doc.size };
+}
+
 module.exports = {
   memberUpload,
   pickFiles,
@@ -109,6 +123,7 @@ module.exports = {
   filePath,
   removeStoredFiles,
   removeUploaded,
+  copyStoredFile,
   DOCUMENT_FIELDS,
   isDocumentField,
   MAX_FILE_MB,

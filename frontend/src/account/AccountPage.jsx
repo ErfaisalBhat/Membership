@@ -39,6 +39,84 @@ function LoginView() {
   );
 }
 
+// One button per plan of this person (same email). The open one is marked.
+function PlanList({ plans, currentId, onPick, busyId }) {
+  return (
+    <ul className="space-y-2">
+      {plans.map((p) => {
+        const current = p._id === currentId;
+        return (
+          <li key={p._id}>
+            <button
+              type="button"
+              disabled={!!busyId}
+              onClick={() => onPick(p)}
+              className={`flex w-full items-center justify-between gap-3 rounded-md border px-4 py-3 text-left hover:bg-slate-50 disabled:opacity-60 ${
+                current ? "border-brand-500 ring-1 ring-brand-500/40" : "border-slate-200"
+              }`}
+            >
+              <span className="min-w-0">
+                <span className="block font-medium text-slate-900">{p.typeLabel}</span>
+                <span className="block font-mono text-xs text-slate-500">
+                  {p.membershipId} · {p.expiryDate ? `Valid till ${formatDate(p.expiryDate)}` : "Lifetime"}
+                </span>
+              </span>
+              <span className="flex shrink-0 items-center gap-2">
+                {busyId === p._id && <span className="text-xs text-slate-500">Opening…</span>}
+                <StatusBadge status={p.status} />
+              </span>
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+// Several plans with one email: open the chosen one (the first is already open).
+function usePlanSwitch() {
+  const { account, switchPlan, setChoosingPlan } = useMemberAuth();
+  const [busyId, setBusyId] = useState("");
+  const [error, setError] = useState("");
+  async function pick(plan) {
+    setError("");
+    if (plan._id === account.member._id) return setChoosingPlan(false);
+    setBusyId(plan._id);
+    try {
+      await switchPlan(plan._id);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusyId("");
+    }
+  }
+  return { pick, busyId, error, setError };
+}
+
+function PlanChooser() {
+  const { account, logout } = useMemberAuth();
+  const { pick, busyId, error } = usePlanSwitch();
+  return (
+    <div className="mx-auto max-w-md px-4 py-14 sm:px-6">
+      <div className="mb-6 text-center">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Choose a membership</h1>
+        <p className="mt-1 text-sm text-slate-500">You have more than one membership with this email address. Which one do you want to open?</p>
+      </div>
+      <Card>
+        <div className="space-y-4">
+          {error && <Alert>{error}</Alert>}
+          <PlanList plans={account.plans} currentId={null} onPick={pick} busyId={busyId} />
+        </div>
+      </Card>
+      <p className="mt-6 text-center text-sm">
+        <button type="button" className="text-slate-500 hover:text-slate-800" onClick={logout}>
+          Log out
+        </button>
+      </p>
+    </div>
+  );
+}
+
 // renewRequest: goes up by one each time "Renew" in the header is clicked; the card then
 // scrolls into view and opens the payment when renewal is open.
 function RenewCard({ account, onUpdated, renewRequest = 0 }) {
@@ -75,7 +153,7 @@ function RenewCard({ account, onUpdated, renewRequest = 0 }) {
       setBusy(true);
       try {
         const res = await api(`/account/orders/${order.orderId}/confirm`, { method: "POST", json: { result }, auth: "member" });
-        onUpdated({ member: res.member, renewal: res.renewal, onlinePayments: res.onlinePayments });
+        onUpdated({ member: res.member, renewal: res.renewal, onlinePayments: res.onlinePayments, plans: res.plans || [] });
         if (res.order.status === "PAID") {
           setMessage({ kind: "success", text: `Renewed. Your membership is now valid till ${formatDate(res.member.expiryDate)}. The updated ID card and receipt have been emailed to you.` });
         } else if (res.order.status === "FAILED") {
@@ -138,7 +216,9 @@ function Dashboard() {
   const [flash, setFlash] = useState("");
   const [error, setError] = useState("");
   const [renewRequest, setRenewRequest] = useState(0);
+  const planSwitch = usePlanSwitch();
   const member = account.member;
+  const plans = account.plans || [];
 
   useEffect(() => {
     if (!member.documents?.photo) return;
@@ -181,6 +261,13 @@ function Dashboard() {
 
       {flash && <Alert kind="success" onClose={() => setFlash("")}>{flash}</Alert>}
       {error && <Alert onClose={() => setError("")}>{error}</Alert>}
+      {planSwitch.error && <Alert onClose={() => planSwitch.setError("")}>{planSwitch.error}</Alert>}
+
+      {plans.length > 1 && (
+        <Card title="My memberships">
+          <PlanList plans={plans} currentId={member._id} onPick={planSwitch.pick} busyId={planSwitch.busyId} />
+        </Card>
+      )}
 
       <Card>
         <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
@@ -296,8 +383,10 @@ function Dashboard() {
 }
 
 export default function AccountPage() {
-  const { status } = useMemberAuth();
+  const { status, account, choosingPlan } = useMemberAuth();
   if (status === "checking") return <Spinner label="Checking your session…" />;
   if (status !== "in") return <LoginView />;
-  return <Dashboard />;
+  if (choosingPlan && account?.plans?.length > 1) return <PlanChooser />;
+  // key: switching plans starts the page afresh (photo, renewal box).
+  return <Dashboard key={account.member._id} />;
 }

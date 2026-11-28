@@ -382,19 +382,6 @@ export default function ApplicationDetailPage() {
         </div>
       </section>
 
-      {a.paidOnPage && ["PENDING", "APPROVED"].includes(a.status) && (
-        <Alert
-          kind={a.paymentVerified ? "success" : "warning"}
-          title={a.paymentVerified ? `Paid on Zoho · Payment ID ${a.paymentReference}` : "Payment not confirmed by Zoho yet"}
-        >
-          {a.paymentVerified
-            ? a.paymentNote
-            : `${
-                // A note that only says "not received yet" repeats the title; specific ones (wrong amount …) are kept.
-                a.paymentNote && !/not (received|reported)|has not reported/i.test(a.paymentNote) ? `${a.paymentNote} ` : ""
-              }The applicant says they paid on the Zoho payment page${a.paymentReportedAt ? ` (${formatDate(a.paymentReportedAt)})` : ""}.`}
-        </Alert>
-      )}
       {a.status === "UNPAID" && (
         <Alert kind="info">
           It comes up for review once paid. Unpaid applications are cancelled automatically after {config.pendingApplicationDays} days.

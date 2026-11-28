@@ -22,9 +22,12 @@ const paymentSchema = new mongoose.Schema(
 const memberSchema = new mongoose.Schema(
   {
     ...personFields,
-    email: { ...personFields.email, unique: true },
+    // One person (email) can hold several plans: one record per plan (see the indexes below).
+    email: { ...personFields.email, index: true },
 
-    membershipId: { type: String, required: true, unique: true },
+    // The plans of one person may share a membership ID; another person may not use it
+    // (checked in members.routes.js idProblem).
+    membershipId: { type: String, required: true, index: true },
     status: { type: String, enum: STATUSES, default: "ACTIVE", index: true },
     statusReason: { type: String, default: "" },
 
@@ -48,5 +51,9 @@ const memberSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Each plan at most once per person, and one ID never twice for the same plan.
+memberSchema.index({ email: 1, membershipType: 1 }, { unique: true });
+memberSchema.index({ membershipId: 1, membershipType: 1 }, { unique: true });
 
 module.exports = mongoose.model("Member", memberSchema);

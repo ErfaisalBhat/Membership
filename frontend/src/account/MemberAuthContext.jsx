@@ -7,7 +7,9 @@ const MemberAuthContext = createContext(null);
 export function MemberAuthProvider({ children }) {
   // status: "checking" | "in" | "out"
   const [status, setStatus] = useState(() => (memberTokenStore.get() ? "checking" : "out"));
-  const [account, setAccount] = useState(null); // { member, renewal, onlinePayments }
+  const [account, setAccount] = useState(null); // { member, renewal, onlinePayments, plans }
+  // Just logged in with an email that holds several plans: the page asks which one to open.
+  const [choosingPlan, setChoosingPlan] = useState(false);
 
   useEffect(() => {
     if (status !== "checking") return;
@@ -36,8 +38,17 @@ export function MemberAuthProvider({ children }) {
   const verifyCode = useCallback(async (email, code) => {
     const data = await api("/account/verify", { method: "POST", json: { email, code }, auth: false });
     memberTokenStore.set(data.token);
-    setAccount({ member: data.member, renewal: data.renewal, onlinePayments: data.onlinePayments });
+    setAccount({ member: data.member, renewal: data.renewal, onlinePayments: data.onlinePayments, plans: data.plans || [] });
+    setChoosingPlan((data.plans || []).length > 1);
     setStatus("in");
+  }, []);
+
+  // Open another plan of the same person (a new session for that membership record).
+  const switchPlan = useCallback(async (memberId) => {
+    const data = await api("/account/switch", { method: "POST", json: { memberId }, auth: "member" });
+    memberTokenStore.set(data.token);
+    setAccount({ member: data.member, renewal: data.renewal, onlinePayments: data.onlinePayments, plans: data.plans || [] });
+    setChoosingPlan(false);
   }, []);
 
   const logout = useCallback(async () => {
@@ -48,12 +59,13 @@ export function MemberAuthProvider({ children }) {
     }
     memberTokenStore.clear();
     setAccount(null);
+    setChoosingPlan(false);
     setStatus("out");
   }, []);
 
   const value = useMemo(
-    () => ({ status, account, setAccount, requestCode, verifyCode, logout }),
-    [status, account, requestCode, verifyCode, logout]
+    () => ({ status, account, setAccount, requestCode, verifyCode, logout, switchPlan, choosingPlan, setChoosingPlan }),
+    [status, account, requestCode, verifyCode, logout, switchPlan, choosingPlan]
   );
   return <MemberAuthContext.Provider value={value}>{children}</MemberAuthContext.Provider>;
 }

@@ -4,7 +4,7 @@ const rateLimit = require("express-rate-limit");
 const Member = require("../members/Member");
 const PaymentOrder = require("../payments/PaymentOrder");
 const { normalizeEmail, isValidEmail, validateSelfUpdate } = require("../members/validateMember");
-const { serializeOwnMember } = require("../members/serialize");
+const { serializeOwnMember, effectiveStatus, typeLabel } = require("../members/serialize");
 const { renewalInfo } = require("../members/renewal");
 const { createCode, checkCode, CODE_MINUTES } = require("../auth/otp");
 const { createSession, endSession, requireMember, MEMBER_SESSION_HOURS } = require("../auth/sessions");
@@ -27,11 +27,26 @@ const loginLimiter = rateLimit({
   message: { message: "Too many requests. Please try again in 15 minutes." },
 });
 
-function accountResponse(member) {
+// One person (email) can hold several plans, one member record each. They log in to one and
+// can switch to the others (POST /switch).
+async function plansOf(email) {
+  const members = await Member.find({ email }, "membershipId membershipType status expiryDate joinDate").sort({ joinDate: 1, _id: 1 }).lean();
+  return members.map((m) => ({
+    _id: m._id,
+    membershipId: m.membershipId,
+    membershipType: m.membershipType,
+    typeLabel: typeLabel(m.membershipType),
+    status: effectiveStatus(m),
+    expiryDate: m.expiryDate,
+  }));
+}
+
+async function accountResponse(member) {
   return {
     member: serializeOwnMember(member),
     renewal: renewalInfo(member),
     onlinePayments: !paymentsProblem(),
+    plans: await plansOf(member.email),
   };
 }
 
@@ -54,17 +69,28 @@ router.post("/otp", loginLimiter, async (req, res) => {
 router.post("/verify", loginLimiter, async (req, res) => {
   const email = normalizeEmail(req.body && req.body.email);
   await checkCode(email, "LOGIN", req.body && req.body.code);
-  const member = await Member.findOne({ email });
+  // Several plans: the first one is opened; the page then asks which plan to show.
+  const member = await Member.findOne({ email }).sort({ joinDate: 1, _id: 1 });
   if (!member) return res.status(400).json({ message: "This code has expired. Please ask for a new code." });
   const token = await createSession("MEMBER", member._id, MEMBER_SESSION_HOURS);
-  res.json({ token, ...accountResponse(member) });
+  res.json({ token, ...(await accountResponse(member)) });
 });
 
 router.use(requireMember);
 
 // GET /api/account/me
-router.get("/me", (req, res) => {
-  res.json(accountResponse(req.member));
+router.get("/me", async (req, res) => {
+  res.json(await accountResponse(req.member));
+});
+
+// POST /api/account/switch { memberId } — open another plan of the same person (same email).
+router.post("/switch", async (req, res) => {
+  const memberId = req.body && req.body.memberId;
+  const member = mongoose.isValidObjectId(memberId) ? await Member.findOne({ _id: memberId, email: req.member.email }) : null;
+  if (!member) return res.status(404).json({ message: "Membership not found." });
+  const token = await createSession("MEMBER", member._id, MEMBER_SESSION_HOURS);
+  await endSession(req.sessionToken);
+  res.json({ token, ...(await accountResponse(member)) });
 });
 
 // PUT /api/account/me { whatsapp, address, affiliated, affiliation, showInPublicList }
@@ -73,7 +99,9 @@ router.put("/me", async (req, res) => {
   if (Object.keys(errors).length) return res.status(400).json({ message: "Please correct the highlighted fields.", errors });
   req.member.set(data);
   await req.member.save();
-  res.json(accountResponse(req.member));
+  // The person's other plans get the same contact details.
+  await Member.updateMany({ email: req.member.email, _id: { $ne: req.member._id } }, { $set: data });
+  res.json(await accountResponse(req.member));
 });
 
 // POST /api/account/logout
@@ -125,7 +153,7 @@ router.post("/orders/:id/confirm", async (req, res) => {
   if (!order) return res.status(404).json({ message: "Payment not found." });
   const updated = await confirmFromBrowser(order, req.body && req.body.result);
   const member = await Member.findById(req.member._id);
-  res.json({ order: publicOrder(updated), ...accountResponse(member) });
+  res.json({ order: publicOrder(updated), ...(await accountResponse(member)) });
 });
 
 module.exports = router;

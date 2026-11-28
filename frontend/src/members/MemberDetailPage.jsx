@@ -43,6 +43,7 @@ export default function MemberDetailPage() {
   const navigate = useNavigate();
   const { config } = useConfig();
   const [member, setMember] = useState(null);
+  const [otherPlans, setOtherPlans] = useState([]); // the same person's other plans (same email)
   const [error, setError] = useState("");
   const [flash, setFlash] = useState(location.state?.flash || "");
   const [photoUrl, setPhotoUrl] = useState(null);
@@ -59,7 +60,11 @@ export default function MemberDetailPage() {
   useEffect(() => {
     let alive = true;
     api(`/members/${id}`)
-      .then(({ member: m }) => alive && setMember(m))
+      .then(({ member: m, otherPlans: others = [] }) => {
+        if (!alive) return;
+        setMember(m);
+        setOtherPlans(others);
+      })
       .catch((e) => alive && setError(e.message));
     return () => {
       alive = false;
@@ -173,11 +178,39 @@ export default function MemberDetailPage() {
               </p>
             )}
           </div>
-          <Link to={`/admin/members/${id}/edit`} className={buttonClass.secondary}>
-            Edit details
-          </Link>
+          <div className="flex shrink-0 flex-col gap-2">
+            <Link to={`/admin/members/${id}/edit`} className={buttonClass.secondary}>
+              Edit details
+            </Link>
+            {otherPlans.length + 1 < config.membershipTypes.length && (
+              <Link to={`/admin/members/new?from=${id}`} className={buttonClass.secondary}>
+                Add another plan
+              </Link>
+            )}
+          </div>
         </div>
       </Card>
+
+      {otherPlans.length > 0 && (
+        <Card title="Other plans of this member" padded={false}>
+          <ul className="divide-y divide-slate-100">
+            {otherPlans.map((p) => (
+              <li key={p._id}>
+                <Link to={`/admin/members/${p._id}`} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50">
+                  <span className="min-w-0">
+                    <span className="font-medium text-slate-900">{p.typeLabel}</span>
+                    <span className="ml-2 font-mono text-sm text-slate-600">{p.membershipId}</span>
+                    <span className="block text-xs text-slate-500">
+                      Joined {formatDate(p.joinDate)} · {p.expiryDate ? `Valid till ${formatDate(p.expiryDate)}` : "Lifetime"}
+                    </span>
+                  </span>
+                  <StatusBadge status={p.status} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="min-w-0 space-y-4 lg:col-span-2">

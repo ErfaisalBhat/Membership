@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ApiError, api } from "../api/client";
 import { typeInfo, useConfig } from "../api/useConfig";
 import { formatMoney, isoDate, todayISO } from "../shared/format";
@@ -41,32 +41,46 @@ function fromMember(m) {
 }
 
 // Admin: add a member (records the first payment) or edit one.
+// /admin/members/new?from=<member id>: another plan for that member. Their details, documents
+// and membership ID are filled in (all can be changed); the plans they already have are blocked.
 export default function MemberFormPage() {
   const { id } = useParams();
   const isEdit = !!id;
+  const [searchParams] = useSearchParams();
+  const fromId = isEdit ? "" : searchParams.get("from") || "";
   const navigate = useNavigate();
   const { config, error: configError } = useConfig();
   const [form, setForm] = useState(emptyForm);
   const [files, setFiles] = useState({});
   const [existingDocs, setExistingDocs] = useState({});
   const [membershipId, setMembershipId] = useState("");
+  const [source, setSource] = useState(null); // { member, heldTypes } when adding another plan
   const [errors, setErrors] = useState({});
   const [banner, setBanner] = useState("");
-  const [loading, setLoading] = useState(isEdit);
+  const [loading, setLoading] = useState(isEdit || !!fromId);
   const [saving, setSaving] = useState(false);
   const topRef = useRef(null);
 
   useEffect(() => {
-    if (!isEdit) return;
-    api(`/members/${id}`)
-      .then(({ member }) => {
-        setForm(fromMember(member));
+    if (!isEdit && !fromId) return;
+    api(`/members/${isEdit ? id : fromId}`)
+      .then(({ member, otherPlans = [] }) => {
         setExistingDocs(member.documents || {});
-        setMembershipId(member.membershipId);
+        if (isEdit) {
+          setForm(fromMember(member));
+          setMembershipId(member.membershipId);
+          return;
+        }
+        // A new plan: the person's details, a fresh joining date / payment, no plan chosen yet.
+        const f = emptyForm();
+        // Membership ID empty: the new plan gets its own number with its own prefix, unless the
+        // admin types one (e.g. the member's current ID, shown in the hint).
+        setForm({ ...fromMember(member), membershipType: "", membershipId: "", remarks: "", joinDate: f.joinDate, payment: f.payment, copyFrom: member._id });
+        setSource({ member, heldTypes: [member.membershipType, ...otherPlans.map((p) => p.membershipType)] });
       })
       .catch((e) => setBanner(e.message))
       .finally(() => setLoading(false));
-  }, [id, isEdit]);
+  }, [id, isEdit, fromId]);
 
   const type = form.membershipType;
 
@@ -140,17 +154,28 @@ export default function MemberFormPage() {
   if (configError) return <Alert>{configError.message}</Alert>;
 
   const showRest = isEdit || !!type;
-  const cancelTo = isEdit ? `/admin/members/${id}` : "/admin/members";
+  const cancelTo = isEdit ? `/admin/members/${id}` : source ? `/admin/members/${source.member._id}` : "/admin/members";
+  const held = source?.heldTypes || [];
+  const allHeld = !!source && config.membershipTypes.every((t) => held.includes(t.key));
+  // Another plan: the Aadhaar (DigiLocker) check carries over only while the email is the same person's.
+  const personForm =
+    source && form.email.trim().toLowerCase() !== source.member.email ? { ...form, aadhaarVerified: false } : form;
 
   return (
     <form onSubmit={submit} noValidate className="mx-auto max-w-3xl">
       <div ref={topRef}>
         <PageHeader
-          title={isEdit ? "Edit member" : "Add member"}
-          subtitle={isEdit ? membershipId : "Register a member who applied on paper or paid at the office."}
+          title={isEdit ? "Edit member" : source ? "Add another plan" : "Add member"}
+          subtitle={
+            isEdit
+              ? membershipId
+              : source
+                ? `${source.member.name} · ${source.member.membershipId} (${source.member.typeLabel})`
+                : "Register a member who applied on paper or paid at the office."
+          }
           back={
             <Link to={cancelTo} className="text-sm text-slate-500 hover:text-slate-800">
-              ← {isEdit ? "Back to member" : "Members"}
+              ← {isEdit || source ? "Back to member" : "Members"}
             </Link>
           }
         />
@@ -158,15 +183,23 @@ export default function MemberFormPage() {
 
       <div className="space-y-6">
         {banner && <Alert onClose={() => setBanner("")}>{banner}</Alert>}
+        {allHeld && <Alert kind="info">This member already has every plan.</Alert>}
 
         <Section title="Membership">
-          <Field label="Membership type" htmlFor="membershipType" required error={errors.membershipType} hint={isEdit ? "The type can't be changed after registration." : undefined}>
+          <Field
+            label="Membership type"
+            htmlFor="membershipType"
+            required
+            error={errors.membershipType}
+            hint={isEdit ? "The type can't be changed after registration." : source ? "Plans this member already has can't be chosen." : undefined}
+          >
             <select id="membershipType" className={inputClass(errors.membershipType)} value={type} disabled={isEdit} onChange={(e) => changeType(e.target.value)}>
               <option value="">Select…</option>
               {config.membershipTypes.map((t) => (
-                <option key={t.key} value={t.key}>
+                <option key={t.key} value={t.key} disabled={held.includes(t.key)}>
                   {t.label}
                   {!t.adminOnly && ` — ${formatMoney(t.fee)}${t.validityMonths ? ` / ${t.validityMonths} months` : " / lifetime"}`}
+                  {held.includes(t.key) && " (already has)"}
                 </option>
               ))}
             </select>
@@ -180,7 +213,9 @@ export default function MemberFormPage() {
               hint={
                 isEdit
                   ? "Changing it means the member's printed ID card no longer matches. Must not be used by another member."
-                  : `Leave empty to give the next number automatically (${typeInfo(config, type)?.idPrefix || ""}00001 style). Must not be used by another member.`
+                  : source
+                    ? `Leave empty to give the next number automatically (${typeInfo(config, type)?.idPrefix || ""}00001 style). Current ID: ${source.member.membershipId} — type it to use the same ID for this plan.`
+                    : `Leave empty to give the next number automatically (${typeInfo(config, type)?.idPrefix || ""}00001 style). Must not be used by another member.`
               }
             >
               <input
@@ -202,7 +237,7 @@ export default function MemberFormPage() {
 
         {showRest && (
           <>
-            <PersonFields form={form} set={set} errors={errors} config={config} files={files} pickFile={pickFile} existingDocs={existingDocs} />
+            <PersonFields form={personForm} set={set} errors={errors} config={config} files={files} pickFile={pickFile} existingDocs={existingDocs} />
 
             {/* Honorary / Emeritus have no fee, so there is no payment to record. */}
             {!isEdit && !typeInfo(config, type)?.adminOnly && (

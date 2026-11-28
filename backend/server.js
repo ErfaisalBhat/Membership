@@ -100,6 +100,9 @@ const PORT = process.env.PORT || 5002;
 const HOST = process.env.HOST || undefined;
 
 connectDB()
+  // Brings the members collection's indexes in line with members/Member.js (e.g. replaces the
+  // old "one member per email / per ID" indexes now that one person can hold several plans).
+  .then(() => require("./members/Member").syncIndexes())
   .then(loadFees) // fees set by the admin replace the ones in config/membership.js
   .then(() => {
     app.listen(PORT, HOST, () => {
